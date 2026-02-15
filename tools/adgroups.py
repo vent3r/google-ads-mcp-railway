@@ -1,5 +1,8 @@
 """Tool 3: adgroup_analysis — Ad group performance analysis."""
 
+import logging
+from collections import defaultdict
+
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
     CampaignResolver,
@@ -9,6 +12,8 @@ from tools.helpers import (
     compute_derived_metrics,
     run_query,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
@@ -22,6 +27,9 @@ def adgroup_analysis(
     limit: int = 30,
 ) -> str:
     """Analyze ad group performance, optionally filtered by campaign.
+
+    Fetches all ad group rows across the date range, aggregates metrics by
+    unique ad group (collapsing per-day rows), then filters and returns results.
 
     Args:
         client: Account name or customer ID.
@@ -51,6 +59,39 @@ def adgroup_analysis(
     )
 
     rows = run_query(customer_id, query)
+    total_api_rows = len(rows)
+
+    # Aggregate by ad_group.id to collapse per-day rows
+    agg_map = defaultdict(lambda: {
+        "campaign.name": "",
+        "ad_group.name": "",
+        "ad_group.id": "",
+        "ad_group.status": "",
+        "metrics.impressions": 0,
+        "metrics.clicks": 0,
+        "metrics.cost_micros": 0,
+        "metrics.conversions": 0.0,
+        "metrics.conversions_value": 0.0,
+    })
+
+    for row in rows:
+        ag_id = row.get("ad_group.id", "")
+        a = agg_map[ag_id]
+        a["campaign.name"] = row.get("campaign.name", "")
+        a["ad_group.name"] = row.get("ad_group.name", "")
+        a["ad_group.id"] = ag_id
+        a["ad_group.status"] = row.get("ad_group.status", "")
+        a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+
+    rows = list(agg_map.values())
+    logger.info(
+        "adgroup_analysis: %d API rows -> %d unique ad groups",
+        total_api_rows, len(rows),
+    )
 
     # Compute derived metrics and filter
     processed = []

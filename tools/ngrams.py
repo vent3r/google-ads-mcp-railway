@@ -1,5 +1,6 @@
 """Tool 6: search_term_ngrams — N-gram aggregation of search terms."""
 
+import logging
 from collections import defaultdict
 
 from ads_mcp.coordinator import mcp
@@ -10,6 +11,8 @@ from tools.helpers import (
     ResultFormatter,
     run_query,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_ngrams(text: str, n: int) -> list[str]:
@@ -35,9 +38,8 @@ def search_term_ngrams(
 ) -> str:
     """Aggregate search terms into n-grams to find patterns.
 
-    Fetches all search terms, extracts n-grams (unigrams, bigrams, or trigrams),
-    aggregates metrics across all search terms containing each n-gram, and
-    returns the top results. Useful for finding high-spend or wasteful word patterns.
+    Fetches all search terms, aggregates metrics by unique term (collapsing
+    per-day rows), then extracts n-grams and aggregates across terms.
 
     Args:
         client: Account name or customer ID.
@@ -69,14 +71,39 @@ def search_term_ngrams(
         "search_term_view.search_term, "
         "metrics.impressions, metrics.clicks, metrics.cost_micros, "
         "metrics.conversions, metrics.conversions_value "
-        f"FROM search_term_view WHERE {where} "
-        "LIMIT 10000"
+        f"FROM search_term_view WHERE {where}"
     )
 
     rows = run_query(customer_id, query)
-    total_terms = len(rows)
+    total_api_rows = len(rows)
 
-    # Aggregate n-grams
+    # First: aggregate by search term to collapse per-day rows
+    term_agg: dict[str, dict] = defaultdict(lambda: {
+        "impressions": 0,
+        "clicks": 0,
+        "cost_micros": 0,
+        "conversions": 0.0,
+        "conversions_value": 0.0,
+    })
+
+    for row in rows:
+        term = row.get("search_term_view.search_term", "")
+        if not term:
+            continue
+        a = term_agg[term]
+        a["impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+
+    total_terms = len(term_agg)
+    logger.info(
+        "search_term_ngrams: %d API rows -> %d unique search terms",
+        total_api_rows, total_terms,
+    )
+
+    # Second: extract n-grams from aggregated terms
     ngram_data: dict[str, dict] = defaultdict(
         lambda: {
             "clicks": 0,
@@ -89,23 +116,16 @@ def search_term_ngrams(
         }
     )
 
-    for row in rows:
-        term = row.get("search_term_view.search_term", "")
+    for term, metrics in term_agg.items():
         ngrams = _extract_ngrams(term, ngram_size)
-
-        clicks = int(row.get("metrics.clicks", 0) or 0)
-        impressions = int(row.get("metrics.impressions", 0) or 0)
-        cost_micros = float(row.get("metrics.cost_micros", 0) or 0)
-        conversions = float(row.get("metrics.conversions", 0) or 0)
-        conv_value = float(row.get("metrics.conversions_value", 0) or 0)
 
         for ng in ngrams:
             d = ngram_data[ng]
-            d["clicks"] += clicks
-            d["impressions"] += impressions
-            d["cost_micros"] += cost_micros
-            d["conversions"] += conversions
-            d["conversions_value"] += conv_value
+            d["clicks"] += metrics["clicks"]
+            d["impressions"] += metrics["impressions"]
+            d["cost_micros"] += metrics["cost_micros"]
+            d["conversions"] += metrics["conversions"]
+            d["conversions_value"] += metrics["conversions_value"]
             d["terms"].add(term)
             d["frequency"] = len(d["terms"])
 
@@ -167,7 +187,7 @@ def search_term_ngrams(
 
     header = (
         f"**Search Term N-gram Analysis** — {date_from} to {date_to}\n"
-        f"Analyzed {total_terms:,} search terms. "
+        f"Analyzed {total_terms:,} unique search terms ({total_api_rows:,} API rows aggregated). "
         f"Extracted {total_ngrams:,} unique {ngram_label}. "
         f"{total_matching:,} match filters.\n\n"
     )

@@ -1,5 +1,8 @@
 """Tool 5: search_term_analysis — Search term analysis with server-side processing."""
 
+import logging
+from collections import defaultdict
+
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
     CampaignResolver,
@@ -9,6 +12,8 @@ from tools.helpers import (
     compute_derived_metrics,
     run_query,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
@@ -25,8 +30,9 @@ def search_term_analysis(
 ) -> str:
     """Analyze search terms with server-side processing for large volumes.
 
-    Fetches up to 10,000 search terms, computes metrics server-side, and
-    returns filtered/sorted results without saturating the LLM context.
+    Fetches all search terms across the date range, aggregates metrics by
+    unique search term (collapsing per-day/per-adgroup rows), then filters
+    and returns the top results.
 
     Args:
         client: Account name or customer ID.
@@ -58,16 +64,61 @@ def search_term_analysis(
         "search_term_view.search_term, search_term_view.status, "
         "metrics.impressions, metrics.clicks, metrics.cost_micros, "
         "metrics.conversions, metrics.conversions_value, metrics.ctr "
-        f"FROM search_term_view WHERE {where} "
-        "LIMIT 10000"
+        f"FROM search_term_view WHERE {where}"
     )
 
     rows = run_query(customer_id, query)
-    total_raw = len(rows)
+    total_api_rows = len(rows)
 
-    # Compute derived metrics
+    # Aggregate by search term to collapse per-day/per-campaign/per-adgroup rows
+    agg_map = defaultdict(lambda: {
+        "search_term_view.search_term": "",
+        "search_term_view.status": "",
+        "campaigns": set(),
+        "adgroups": set(),
+        "metrics.impressions": 0,
+        "metrics.clicks": 0,
+        "metrics.cost_micros": 0,
+        "metrics.conversions": 0.0,
+        "metrics.conversions_value": 0.0,
+    })
+
     for row in rows:
-        compute_derived_metrics(row)
+        term = row.get("search_term_view.search_term", "")
+        if not term:
+            continue
+        a = agg_map[term]
+        a["search_term_view.search_term"] = term
+        a["search_term_view.status"] = row.get("search_term_view.status", "")
+        a["campaigns"].add(row.get("campaign.name", ""))
+        a["adgroups"].add(row.get("ad_group.name", ""))
+        a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+
+    # Convert sets to readable strings and compute derived metrics
+    rows = []
+    for a in agg_map.values():
+        camp_set = a.pop("campaigns")
+        ag_set = a.pop("adgroups")
+        a["campaign.name"] = (
+            f"{len(camp_set)} campaigns" if len(camp_set) > 1
+            else next(iter(camp_set), "")
+        )
+        a["ad_group.name"] = (
+            f"{len(ag_set)} ad groups" if len(ag_set) > 1
+            else next(iter(ag_set), "")
+        )
+        compute_derived_metrics(a)
+        rows.append(a)
+
+    total_raw = len(rows)
+    logger.info(
+        "search_term_analysis: %d API rows -> %d unique search terms",
+        total_api_rows, total_raw,
+    )
 
     # Apply filters
     filtered = []
@@ -132,7 +183,7 @@ def search_term_analysis(
 
     header = (
         f"**Search Term Analysis** — {date_from} to {date_to}\n"
-        f"Found {total_raw:,} search terms. "
+        f"Found {total_raw:,} unique search terms ({total_api_rows:,} API rows aggregated). "
         f"Showing top {min(limit, total_filtered)} by {sort_by} "
         f"(filtered: {', '.join(filters_desc)}). "
         f"{total_filtered:,} match filters.\n\n"
