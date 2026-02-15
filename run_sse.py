@@ -13,17 +13,31 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 from ads_mcp.coordinator import mcp
 # from ads_mcp.tools import search, core  # noqa: F401  # disabled: replaced by custom tools
 
 # Custom analytics tools — import triggers @mcp.tool() registration
 from tools import clients, campaigns, adgroups, keywords  # noqa: F401
 from tools import search_terms, ngrams, anomalies  # noqa: F401
-from tools import change_history, conversion_setup, run_gaql  # noqa: F401
-from tools import keyword_ideas  # noqa: F401
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+try:
+    from tools import change_history, conversion_setup, run_gaql  # noqa: F401
+    logger.info("Loaded: change_history, conversion_setup, run_gaql")
+except Exception as e:
+    logger.error(f"FAILED to load change_history/conversion_setup/run_gaql: {e}")
+
+try:
+    from tools import keyword_ideas  # noqa: F401
+    logger.info("Loaded: keyword_ideas")
+except Exception as e:
+    logger.error(f"FAILED to load keyword_ideas: {e}")
+
+# Diagnostic: list all registered tools
+tool_names = [t.name for t in mcp._tool_manager.list_tools()]
+logger.info(f"Registered {len(tool_names)} tools: {tool_names}")
 
 
 class SecurityMiddleware(BaseHTTPMiddleware):
