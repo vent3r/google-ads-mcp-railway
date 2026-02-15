@@ -16,6 +16,10 @@ from starlette.responses import JSONResponse
 from ads_mcp.coordinator import mcp
 from ads_mcp.tools import search, core  # noqa: F401
 
+# Custom analytics tools — import triggers @mcp.tool() registration
+from tools import clients, campaigns, adgroups, keywords  # noqa: F401
+from tools import search_terms, ngrams, anomalies  # noqa: F401
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
