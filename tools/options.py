@@ -283,12 +283,71 @@ def apply_limit(
 class OutputFormat:
     """Generate different output formats from processed rows."""
 
+    # Auto-format rules based on column key
+    _CURRENCY_KEYS = {
+        "_spend", "_cpa", "_cpc",
+        "metrics.conversions_value",
+        "low_bid", "high_bid",
+    }
+    _PERCENT_KEYS = {
+        "_ctr",
+        "search_is", "budget_lost_is", "rank_lost_is",
+    }
+    _MULTIPLIER_KEYS = {"_roas"}
+    _INTEGER_KEYS = {
+        "metrics.impressions", "metrics.clicks",
+        "term_count",
+    }
+    _DECIMAL1_KEYS = {
+        "metrics.conversions",
+    }
+    _QS_KEYS = {"qs"}
+
+    @classmethod
+    def _format_cell(cls, key: str, val: Any) -> str:
+        """Auto-format a cell value based on column key."""
+        if val is None or val == "":
+            return ""
+
+        # Try numeric conversion
+        try:
+            num = float(val)
+        except (ValueError, TypeError):
+            return str(val)
+
+        # Currency: €1,234.56
+        if key in cls._CURRENCY_KEYS:
+            return f"{num:,.2f}"
+
+        # Percentage: 12.3%
+        if key in cls._PERCENT_KEYS:
+            return f"{num:.1f}%"
+
+        # Multiplier: 1.23x
+        if key in cls._MULTIPLIER_KEYS:
+            return f"{num:.2f}x"
+
+        # Integer with thousands separator: 1,234
+        if key in cls._INTEGER_KEYS:
+            return f"{int(num):,}"
+
+        # One decimal: 987.5
+        if key in cls._DECIMAL1_KEYS:
+            return f"{num:,.1f}"
+
+        # Quality Score: integer, no separator
+        if key in cls._QS_KEYS:
+            return str(int(num)) if num > 0 else "-"
+
+        # Default: return as string (text fields, enums, etc.)
+        return str(val)
+
     @staticmethod
     def markdown_table(
         rows: List[Dict[str, Any]],
         columns: List[Tuple[str, str]],
     ) -> str:
-        """Build a markdown table.
+        """Build a markdown table with auto-formatted values.
 
         Args:
             rows: data rows
@@ -305,7 +364,7 @@ class OutputFormat:
             cells = []
             for key, _ in columns:
                 val = row.get(key, "")
-                cells.append(str(val) if val is not None else "")
+                cells.append(OutputFormat._format_cell(key, val))
             lines.append("| " + " | ".join(cells) + " |")
 
         return "\n".join(lines)
