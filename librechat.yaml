@@ -24,3 +24,5 @@ mcpServers:
     url: "https://google-ads-mcp-railway-production.up.railway.app/sse"
     timeout: 60000
     initTimeout: 30000
+    headers:
+      x-api-key: "${MCP_API_KEY}"
