@@ -152,7 +152,7 @@ def search_term_analysis(
     total_unique = len(agg)
 
     # Apply options pipeline (text filter already applied, pass empty contains/excludes)
-    filtered, total, truncated, filter_desc = process_rows(
+    filtered, total, truncated, filter_desc, all_summary = process_rows(
         aggregated,
         text_field="",  # text already filtered during aggregation
         contains="",
@@ -175,9 +175,6 @@ def search_term_analysis(
         min_roas=min_roas, zero_conversions=zero_conversions,
     )
 
-    # Summary
-    summary = OutputFormat.summary_row(filtered) if filtered else None
-
     # Columns
     columns = COLUMNS.SEARCH_TERM_DETAIL if detail else COLUMNS.SEARCH_TERM
 
@@ -190,6 +187,8 @@ def search_term_analysis(
         filter_desc=filter_desc,
         extra=f"{total_unique:,} unique terms",
     )
-    footer = build_footer(total, len(filtered), truncated, summary)
+    footer = build_footer(total, len(filtered), truncated, all_summary)
 
-    return format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)
+    return format_output(filtered, columns, header=header, footer=footer,
+                         output_mode=output_mode, pre_summary=all_summary,
+                         total_filtered=total)

@@ -159,7 +159,7 @@ def search_term_ngrams(
         aggregated.append(data)
 
     # Apply options pipeline
-    filtered, total, truncated, filter_desc = process_rows(
+    filtered, total, truncated, filter_desc, all_summary = process_rows(
         aggregated,
         text_field="ngram",
         contains=contains,
@@ -173,9 +173,6 @@ def search_term_ngrams(
         sort_by=sort_by,
         limit=limit,
     )
-
-    # Summary
-    summary = OutputFormat.summary_row(filtered) if filtered else None
 
     # Columns
     columns = COLUMNS.NGRAM
@@ -193,6 +190,8 @@ def search_term_ngrams(
         filter_desc=filter_desc,
         extra=f"{total_terms:,} search terms",
     )
-    footer = build_footer(total, len(filtered), truncated, summary)
+    footer = build_footer(total, len(filtered), truncated, all_summary)
 
-    return format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)
+    return format_output(filtered, columns, header=header, footer=footer,
+                         output_mode=output_mode, pre_summary=all_summary,
+                         total_filtered=total)

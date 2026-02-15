@@ -119,7 +119,7 @@ def adgroup_analysis(
         compute_derived_metrics(row)
 
     # Apply options pipeline
-    filtered, total, truncated, filter_desc = process_rows(
+    filtered, total, truncated, filter_desc, all_summary = process_rows(
         aggregated,
         text_field="ad_group.name",
         contains=contains,
@@ -138,9 +138,6 @@ def adgroup_analysis(
     # Benchmarks
     alerts = Benchmarks.summarize_flags(filtered, name_field="ad_group.name")
 
-    # Summary
-    summary = OutputFormat.summary_row(filtered) if filtered else None
-
     # Columns
     columns = COLUMNS.ADGROUP
 
@@ -152,9 +149,11 @@ def adgroup_analysis(
         date_to=date_to,
         filter_desc=filter_desc,
     )
-    footer = build_footer(total, len(filtered), truncated, summary)
+    footer = build_footer(total, len(filtered), truncated, all_summary)
 
-    result = format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)
+    result = format_output(filtered, columns, header=header, footer=footer,
+                           output_mode=output_mode, pre_summary=all_summary,
+                           total_filtered=total)
 
     if alerts:
         result += f"\n\n{alerts}"

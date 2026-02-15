@@ -370,7 +370,8 @@ def format_output(
     footer: str = "",
     output_format: str = "markdown",
     output_mode: str = "summary",
-    all_rows: Optional[List[Dict[str, Any]]] = None,
+    pre_summary: Optional[Dict[str, Any]] = None,
+    total_filtered: int = 0,
     summary_limit: int = 10,
 ) -> str:
     """Full output pipeline: header + table + footer.
@@ -380,8 +381,9 @@ def format_output(
         output_mode: "summary" (default) or "full"
             - summary: shows top N rows + totals + "N more available"
             - full: shows all rows passed in
-        all_rows: complete filtered+sorted dataset BEFORE limit (for summary totals).
-            If None, totals are computed from rows.
+        pre_summary: pre-computed summary dict from process_rows (totals on ALL
+            filtered rows before limit). If None, computes from rows.
+        total_filtered: total number of filtered rows before limit (for accurate count)
         summary_limit: how many rows to show in summary mode (default 10)
     """
     parts = []
@@ -390,10 +392,10 @@ def format_output(
         parts.append(header)
 
     if output_mode == "summary" and len(rows) > summary_limit:
-        # Summary mode: show top N + totals over ALL data
+        # Summary mode: show top N + totals over ALL filtered data
         display = rows[:summary_limit]
-        data_for_totals = all_rows if all_rows is not None else rows
-        summary = OutputFormat.summary_row(data_for_totals)
+        summary = pre_summary if pre_summary else OutputFormat.summary_row(rows)
+        total_count = total_filtered if total_filtered > 0 else len(rows)
 
         if output_format == "csv":
             parts.append(OutputFormat.csv_string(display, columns))
@@ -401,8 +403,6 @@ def format_output(
             parts.append(OutputFormat.markdown_table(display, columns))
 
         # Summary totals
-        remaining = len(rows) - summary_limit
-        total_data = len(data_for_totals)
         summary_parts = []
         if summary:
             spend = summary.get("_spend", 0)
@@ -411,12 +411,12 @@ def format_output(
             cpa = summary.get("_cpa", 0)
             clicks = summary.get("metrics.clicks", 0)
             summary_parts.append(
-                f"**Totals ({total_data:,} rows)**: "
+                f"**Totals ({total_count:,} rows)**: "
                 f"Spend €{spend:,.2f} · Clicks {clicks:,} · "
                 f"Conv {conv:,.1f} · CPA €{cpa:,.2f} · ROAS {roas:.2f}x"
             )
         summary_parts.append(
-            f"*Showing top {summary_limit} of {len(rows):,} results. "
+            f"*Showing top {summary_limit} of {total_count:,} results. "
             f"Ask for full data or increase limit to see more.*"
         )
         parts.append("\n".join(summary_parts))
@@ -922,13 +922,16 @@ def process_rows(
     sort_by: str = "spend",
     ascending: bool = False,
     limit: int = 50,
-) -> Tuple[List[Dict[str, Any]], int, bool, str]:
+) -> Tuple[List[Dict[str, Any]], int, bool, str, Optional[Dict[str, Any]]]:
     """Full pipeline: filter → sort → limit in ONE call.
 
-    Returns: (rows, total_count, was_truncated, filter_description)
+    Returns: (rows, total_count, was_truncated, filter_description, all_rows_summary)
+
+    all_rows_summary: totals computed on ALL filtered rows BEFORE limit,
+        so summary is always accurate regardless of limit.
 
     Usage:
-        rows, total, truncated, filter_desc = process_rows(
+        rows, total, truncated, filter_desc, summary = process_rows(
             aggregated_data,
             text_field="term",
             contains="pacco,pacchi",
@@ -964,7 +967,11 @@ def process_rows(
     # Sort
     sorted_rows = apply_sort(filtered, sort_by=sort_by, ascending=ascending)
 
+    # Compute summary on ALL filtered rows BEFORE limit
+    all_summary = OutputFormat.summary_row(sorted_rows) if sorted_rows else None
+    total_filtered = len(sorted_rows)
+
     # Limit
     limited, total, truncated = apply_limit(sorted_rows, limit=limit)
 
-    return limited, total, truncated, filter_desc
+    return limited, total_filtered, truncated, filter_desc, all_summary

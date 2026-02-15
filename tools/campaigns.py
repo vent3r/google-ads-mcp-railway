@@ -182,7 +182,7 @@ def campaign_analysis(
         ) if p_conv else "-"
 
     # Apply options pipeline: filter → sort → limit
-    filtered, total, truncated, filter_desc = process_rows(
+    filtered, total, truncated, filter_desc, all_summary = process_rows(
         current_rows,
         text_field="campaign.name",
         contains=contains,
@@ -201,10 +201,7 @@ def campaign_analysis(
     # Benchmarks
     alerts = Benchmarks.summarize_flags(filtered, name_field="campaign.name")
 
-    # Summary row
-    summary = OutputFormat.summary_row(filtered) if filtered else None
-
-    # Columns
+    # Build output
     columns = COLUMNS.CAMPAIGN + [
         ("d_spend", "Δ Spend"),
         ("d_conv", "Δ Conv"),
@@ -219,9 +216,11 @@ def campaign_analysis(
         filter_desc=filter_desc,
         extra=f"vs {DateHelper.format_date(prev_from)} → {DateHelper.format_date(prev_to)}",
     )
-    footer = build_footer(total, len(filtered), truncated, summary)
+    footer = build_footer(total, len(filtered), truncated, all_summary)
 
-    result = format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)
+    result = format_output(filtered, columns, header=header, footer=footer,
+                           output_mode=output_mode, pre_summary=all_summary,
+                           total_filtered=total)
 
     if alerts:
         result += f"\n\n{alerts}"
