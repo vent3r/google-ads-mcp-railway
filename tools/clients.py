@@ -36,7 +36,7 @@ def list_clients() -> str:
     for row in rows:
         formatted.append({
             "name": row.get("customer_client.descriptive_name", ""),
-            "id": str(row.get("customer_client.client_customer", "")),
+            "id": str(row.get("customer_client.client_customer", "")).replace("customers/", "").replace("-", ""),
             "status": row.get("customer_client.status", ""),
         })
 

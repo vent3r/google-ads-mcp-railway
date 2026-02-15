@@ -89,7 +89,8 @@ class ClientResolver:
             cls._clients.clear()
             cls._clients_by_id.clear()
             for row in rows:
-                cid = str(row.get("customer_client.client_customer", ""))
+                raw_cid = str(row.get("customer_client.client_customer", ""))
+                cid = raw_cid.replace("customers/", "").replace("-", "")
                 name = row.get("customer_client.descriptive_name", "")
                 if cid:
                     cls._clients[name.lower()] = cid
