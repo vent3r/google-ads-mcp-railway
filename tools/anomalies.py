@@ -1,6 +1,7 @@
 """Tool 7: anomaly_detection — Detect anomalous days for a given metric."""
 
 import math
+from collections import defaultdict
 from datetime import date, timedelta
 
 from ads_mcp.coordinator import mcp
@@ -21,17 +22,16 @@ def anomaly_detection(
     campaign: str = "",
     sensitivity: float = 2.0,
 ) -> str:
-    """Detect anomalous days where a metric deviates significantly from the mean.
+    """Detect anomalous days where a metric deviates from the mean.
 
-    Uses standard deviation analysis to identify spikes and drops in daily
-    performance data.
+    Uses standard deviation analysis to find spikes and drops.
 
     Args:
         client: Account name or customer ID.
         days: Number of days to analyze (default 30).
-        metric: Metric to analyze — spend, clicks, conversions, cpa, cpc, or ctr (default spend).
-        campaign: Campaign name or ID to filter (optional).
-        sensitivity: Number of standard deviations for anomaly threshold — 1.5, 2.0, or 2.5 (default 2.0).
+        metric: spend, clicks, conversions, cpa, cpc, or ctr (default spend).
+        campaign: Campaign name or ID (optional).
+        sensitivity: Std dev threshold — 1.5, 2.0, or 2.5 (default 2.0).
     """
     customer_id = ClientResolver.resolve(client)
 
@@ -46,11 +46,9 @@ def anomaly_detection(
         campaign_clause = f" AND campaign.id = {campaign_id}"
 
     query = (
-        "SELECT "
-        "segments.date, "
+        "SELECT segments.date, "
         "metrics.impressions, metrics.clicks, metrics.cost_micros, "
-        "metrics.conversions, metrics.conversions_value, "
-        "metrics.ctr, metrics.average_cpc "
+        "metrics.conversions, metrics.conversions_value "
         "FROM campaign "
         f"WHERE {DateHelper.date_condition(date_from, date_to)}"
         f"{campaign_clause}"
@@ -59,112 +57,93 @@ def anomaly_detection(
     rows = run_query(customer_id, query)
 
     # Aggregate by day
-    daily: dict[str, dict] = {}
+    daily: dict[str, dict] = defaultdict(lambda: {
+        "impressions": 0, "clicks": 0, "cost_micros": 0,
+        "conversions": 0.0, "conversions_value": 0.0,
+    })
+
     for row in rows:
         d = row.get("segments.date", "")
-        if d not in daily:
-            daily[d] = {
-                "impressions": 0,
-                "clicks": 0,
-                "cost_micros": 0,
-                "conversions": 0.0,
-                "conversions_value": 0.0,
-                "ctr_sum": 0.0,
-                "cpc_sum": 0.0,
-                "count": 0,
-            }
-        agg = daily[d]
-        agg["impressions"] += int(row.get("metrics.impressions", 0) or 0)
-        agg["clicks"] += int(row.get("metrics.clicks", 0) or 0)
-        agg["cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
-        agg["conversions"] += float(row.get("metrics.conversions", 0) or 0)
-        agg["conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
-        agg["ctr_sum"] += float(row.get("metrics.ctr", 0) or 0)
-        agg["cpc_sum"] += float(row.get("metrics.average_cpc", 0) or 0)
-        agg["count"] += 1
+        a = daily[d]
+        a["impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
 
     if not daily:
         return "No data found for the specified period."
 
-    # Compute metric values per day
-    def get_metric_value(agg: dict) -> float:
-        spend = agg["cost_micros"] / 1_000_000
-        clicks = agg["clicks"]
-        conversions = agg["conversions"]
+    def get_value(a: dict) -> float:
+        spend = a["cost_micros"] / 1_000_000
+        clicks = a["clicks"]
+        conv = a["conversions"]
+        impr = a["impressions"]
         if metric == "spend":
             return spend
         elif metric == "clicks":
             return float(clicks)
         elif metric == "conversions":
-            return conversions
+            return conv
         elif metric == "cpa":
-            return spend / conversions if conversions > 0 else 0.0
+            return spend / conv if conv > 0 else 0.0
         elif metric == "cpc":
             return spend / clicks if clicks > 0 else 0.0
         elif metric == "ctr":
-            impressions = agg["impressions"]
-            return (clicks / impressions * 100) if impressions > 0 else 0.0
+            return (clicks / impr * 100) if impr > 0 else 0.0
         return spend
 
-    day_values = []
-    for d in sorted(daily.keys()):
-        val = get_metric_value(daily[d])
-        day_values.append({"date": d, "value": val})
+    day_values = [
+        {"date": d, "value": get_value(daily[d])}
+        for d in sorted(daily.keys())
+    ]
 
-    # Statistics
     values = [dv["value"] for dv in day_values]
     n = len(values)
     mean = sum(values) / n
     variance = sum((v - mean) ** 2 for v in values) / n
-    std_dev = math.sqrt(variance) if variance > 0 else 0.0
+    std = math.sqrt(variance) if variance > 0 else 0.0
 
-    # Find anomalies
     anomalies = []
-    for dv in day_values:
-        if std_dev > 0:
-            deviation = abs(dv["value"] - mean)
-            if deviation > sensitivity * std_dev:
-                anomaly_type = "spike" if dv["value"] > mean else "drop"
+    if std > 0:
+        for dv in day_values:
+            dev = abs(dv["value"] - mean)
+            if dev > sensitivity * std:
                 anomalies.append({
                     "date": dv["date"],
                     "value": dv["value"],
-                    "mean": mean,
-                    "deviation_sigma": round(deviation / std_dev, 1),
-                    "type": anomaly_type,
+                    "sigma": round(dev / std, 1),
+                    "type": "spike" if dv["value"] > mean else "drop",
                 })
 
-    # Format values for display
     def fmt(v: float) -> str:
-        if metric in ("ctr",):
-            return ResultFormatter.format_percent(v)
-        return ResultFormatter.format_currency(v)
+        if metric == "ctr":
+            return ResultFormatter.fmt_percent(v)
+        return ResultFormatter.fmt_currency(v)
 
     output = []
     for a in anomalies:
         output.append({
             "date": a["date"],
             "value": fmt(a["value"]),
-            "mean": fmt(a["mean"]),
-            "deviation": f"{a['deviation_sigma']}σ",
+            "mean": fmt(mean),
+            "deviation": f"{a['sigma']}σ",
             "type": a["type"],
         })
 
     columns = [
-        ("date", "Date"),
-        ("value", "Value"),
-        ("mean", "Mean"),
-        ("deviation", "Deviation"),
-        ("type", "Type"),
+        ("date", "Date"), ("value", "Value"), ("mean", "Mean"),
+        ("deviation", "Deviation"), ("type", "Type"),
     ]
 
     header = (
         f"**Anomaly Detection** — {date_from} to {date_to}\n"
         f"Metric: {metric} | Sensitivity: {sensitivity}σ\n"
-        f"Analyzed {n} days. Mean {metric}: {fmt(mean)}/day. "
-        f"Std dev: {fmt(std_dev)}. Found {len(anomalies)} anomalies.\n\n"
+        f"{n} days analyzed. Mean: {fmt(mean)}/day. Std: {fmt(std)}. "
+        f"{len(anomalies)} anomalies found.\n\n"
     )
 
     if not anomalies:
-        return header + "No anomalies detected at the current sensitivity level."
+        return header + "No anomalies detected at current sensitivity."
 
     return header + ResultFormatter.markdown_table(output, columns, max_rows=50)

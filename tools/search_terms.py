@@ -1,4 +1,4 @@
-"""Tool 5: search_term_analysis — Search term analysis with server-side processing."""
+"""Tool 5: search_term_analysis — Search term analysis with aggregation."""
 
 import logging
 from collections import defaultdict
@@ -29,22 +29,22 @@ def search_term_analysis(
     limit: int = 50,
     detail: bool = False,
 ) -> str:
-    """Analyze search terms with server-side processing for large volumes.
+    """Analyze search terms with server-side aggregation.
 
-    By default, aggregates metrics by unique search term across all campaigns
-    and ad groups. Set detail=true to see per-campaign/ad-group breakdown.
+    Default: one row per unique search term (campaigns/adgroups shown as count).
+    Detail mode: one row per search term × campaign × ad group.
 
     Args:
         client: Account name or customer ID.
         date_from: Start date YYYY-MM-DD.
         date_to: End date YYYY-MM-DD.
-        campaign: Campaign name or ID to filter (optional).
-        min_clicks: Minimum clicks to include (default 1).
-        max_cpa: Maximum CPA to include — 0 means no limit (default 0).
-        zero_conversions: If true, show ONLY search terms with 0 conversions (default false).
-        sort_by: Sort metric — spend, clicks, impressions, cpa, or ctr (default spend).
-        limit: Maximum rows to return (default 50).
-        detail: If true, show one row per search term per campaign/ad group (default false).
+        campaign: Campaign name or ID (optional).
+        min_clicks: Min clicks to include (default 1).
+        max_cpa: Max CPA — 0 = no limit (default 0).
+        zero_conversions: If true, only show terms with 0 conversions (default false).
+        sort_by: spend, clicks, impressions, cpa, or ctr (default spend).
+        limit: Max rows (default 50).
+        detail: If true, show per campaign/adgroup breakdown (default false).
     """
     customer_id = ClientResolver.resolve(client)
 
@@ -52,7 +52,6 @@ def search_term_analysis(
         DateHelper.date_condition(date_from, date_to),
         "metrics.impressions > 0",
     ]
-
     if campaign:
         campaign_id = CampaignResolver.resolve(customer_id, campaign)
         conditions.append(f"campaign.id = {campaign_id}")
@@ -69,158 +68,112 @@ def search_term_analysis(
     )
 
     rows = run_query(customer_id, query)
-    total_api_rows = len(rows)
+    total_api = len(rows)
 
+    # Aggregate
     if detail:
-        # --- DETAIL MODE: aggregate per search_term x campaign x adgroup (collapse days only) ---
-        agg_map = defaultdict(lambda: {
-            "search_term_view.search_term": "",
-            "campaign.name": "",
-            "ad_group.name": "",
-            "metrics.impressions": 0,
-            "metrics.clicks": 0,
-            "metrics.cost_micros": 0.0,
-            "metrics.conversions": 0.0,
-            "metrics.conversions_value": 0.0,
-        })
-
-        for row in rows:
-            term = row.get("search_term_view.search_term", "")
-            camp = row.get("campaign.name", "")
-            ag = row.get("ad_group.name", "")
-            if not term:
-                continue
-            key = (term, camp, ag)
-            a = agg_map[key]
-            a["search_term_view.search_term"] = term
-            a["campaign.name"] = camp
-            a["ad_group.name"] = ag
-            a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
-            a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
-            a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
-            a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
-            a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
-
-        rows = list(agg_map.values())
-        for r in rows:
-            compute_derived_metrics(r)
-
-        mode_label = "detail"
+        # Group by term + campaign + adgroup
+        group_key = lambda row: (
+            row.get("search_term_view.search_term", ""),
+            row.get("campaign.name", ""),
+            row.get("ad_group.name", ""),
+        )
     else:
-        # --- DEFAULT MODE: aggregate per search_term (collapse days + campaigns + adgroups) ---
-        agg_map = defaultdict(lambda: {
-            "search_term_view.search_term": "",
-            "_campaigns": set(),
-            "_adgroups": set(),
-            "metrics.impressions": 0,
-            "metrics.clicks": 0,
-            "metrics.cost_micros": 0.0,
-            "metrics.conversions": 0.0,
-            "metrics.conversions_value": 0.0,
-        })
+        # Group by term only
+        group_key = lambda row: (row.get("search_term_view.search_term", ""),)
 
-        for row in rows:
-            term = row.get("search_term_view.search_term", "")
-            if not term:
-                continue
-            a = agg_map[term]
-            a["search_term_view.search_term"] = term
-            a["_campaigns"].add(row.get("campaign.name", ""))
-            a["_adgroups"].add(row.get("ad_group.name", ""))
-            a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
-            a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
-            a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
-            a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
-            a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+    agg = defaultdict(lambda: {
+        "term": "", "status": "",
+        "campaigns": set(), "adgroups": set(),
+        "metrics.impressions": 0, "metrics.clicks": 0,
+        "metrics.cost_micros": 0, "metrics.conversions": 0.0,
+        "metrics.conversions_value": 0.0,
+    })
 
-        rows = []
-        for a in agg_map.values():
-            camp_set = a.pop("_campaigns")
-            ag_set = a.pop("_adgroups")
-            a["campaign.name"] = (
-                f"{len(camp_set)} campaigns" if len(camp_set) > 1
-                else next(iter(camp_set), "")
-            )
-            a["ad_group.name"] = (
-                f"{len(ag_set)} ad groups" if len(ag_set) > 1
-                else next(iter(ag_set), "")
-            )
-            compute_derived_metrics(a)
-            rows.append(a)
-
-        mode_label = "aggregated"
-
-    total_unique = len(rows)
-    logger.info(
-        "search_term_analysis [%s]: %d API rows -> %d rows",
-        mode_label, total_api_rows, total_unique,
-    )
-
-    # --- Apply filters ---
-    filtered = []
     for row in rows:
-        clicks = int(row.get("metrics.clicks", 0) or 0)
-        conversions = float(row.get("metrics.conversions", 0) or 0)
-        cpa = row["_cpa"]
+        term = row.get("search_term_view.search_term", "")
+        if not term:
+            continue
+        key = group_key(row)
+        a = agg[key]
+        a["term"] = term
+        a["status"] = row.get("search_term_view.status", "")
+        a["campaigns"].add(row.get("campaign.name", ""))
+        a["adgroups"].add(row.get("ad_group.name", ""))
+        a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+
+    # Finalize sets, compute metrics, filter
+    processed = []
+    for a in agg.values():
+        camp_set = a.pop("campaigns")
+        ag_set = a.pop("adgroups")
+        a["campaign"] = (
+            f"{len(camp_set)} campaigns" if len(camp_set) > 1
+            else next(iter(camp_set), "")
+        )
+        a["adgroup"] = (
+            f"{len(ag_set)} ad groups" if len(ag_set) > 1
+            else next(iter(ag_set), "")
+        )
+        compute_derived_metrics(a)
+
+        clicks = int(a.get("metrics.clicks", 0))
+        conv = float(a.get("metrics.conversions", 0))
+        cpa = a["_cpa"]
 
         if clicks < min_clicks:
             continue
-        if zero_conversions and conversions > 0:
+        if zero_conversions and conv > 0:
             continue
-        if not zero_conversions and max_cpa > 0 and cpa > max_cpa and conversions > 0:
+        if not zero_conversions and max_cpa > 0 and cpa > max_cpa and conv > 0:
             continue
+        processed.append(a)
 
-        filtered.append(row)
-
-    total_filtered = len(filtered)
+    total_unique = len(agg)
+    total_filtered = len(processed)
+    logger.info(
+        "search_term_analysis: %d API rows -> %d unique -> %d filtered",
+        total_api, total_unique, total_filtered,
+    )
 
     # Sort
     sort_keys = {
-        "spend": "_spend",
-        "clicks": "metrics.clicks",
-        "impressions": "metrics.impressions",
-        "cpa": "_cpa",
+        "spend": "_spend", "clicks": "metrics.clicks",
+        "impressions": "metrics.impressions", "cpa": "_cpa", "ctr": "_ctr",
     }
-    sort_key = sort_keys.get(sort_by.lower(), "_spend")
-    filtered.sort(key=lambda r: float(r.get(sort_key, 0) or 0), reverse=True)
-
-    display = filtered[:limit]
+    sk = sort_keys.get(sort_by.lower(), "_spend")
+    processed.sort(key=lambda r: float(r.get(sk, 0) or 0), reverse=True)
+    display = processed[:limit]
 
     # Format
     output = []
     for row in display:
         output.append({
-            "search_term": row.get("search_term_view.search_term", ""),
-            "campaign": row.get("campaign.name", ""),
-            "adgroup": row.get("ad_group.name", ""),
-            "clicks": f"{int(row.get('metrics.clicks', 0) or 0):,}",
-            "spend": ResultFormatter.format_currency(row["_spend"]),
-            "conversions": f"{float(row.get('metrics.conversions', 0) or 0):,.1f}",
-            "cpa": ResultFormatter.format_currency(row["_cpa"]),
+            "term": row["term"],
+            "campaign": row["campaign"],
+            "adgroup": row["adgroup"],
+            "clicks": ResultFormatter.fmt_int(row["metrics.clicks"]),
+            "spend": ResultFormatter.fmt_currency(row["_spend"]),
+            "conv": f"{float(row['metrics.conversions']):,.1f}",
+            "cpa": ResultFormatter.fmt_currency(row["_cpa"]),
+            "roas": f"{row['_roas']:.2f}",
         })
 
     columns = [
-        ("search_term", "Search Term"),
-        ("campaign", "Campaign"),
-        ("adgroup", "Ad Group"),
-        ("clicks", "Clicks"),
-        ("spend", "Spend"),
-        ("conversions", "Conv"),
-        ("cpa", "CPA"),
+        ("term", "Search Term"), ("campaign", "Campaign"),
+        ("adgroup", "Ad Group"), ("clicks", "Clicks"),
+        ("spend", "Spend"), ("conv", "Conv"),
+        ("cpa", "CPA"), ("roas", "ROAS"),
     ]
 
-    filters_desc = [f"clicks >= {min_clicks}"]
-    if zero_conversions:
-        filters_desc.append("zero conversions only")
-    if max_cpa > 0:
-        filters_desc.append(f"CPA <= {max_cpa}")
-
     header = (
-        f"**Search Term Analysis ({mode_label})** — {date_from} to {date_to}\n"
-        f"{total_unique:,} rows ({total_api_rows:,} API rows). "
-        f"Showing top {min(limit, total_filtered)} by {sort_by} "
-        f"(filtered: {', '.join(filters_desc)}). "
-        f"{total_filtered:,} match filters.\n\n"
+        f"**Search Term Analysis** — {date_from} to {date_to}\n"
+        f"{total_unique:,} unique terms ({total_api:,} API rows). "
+        f"{total_filtered:,} match filters. Sorted by {sort_by}.\n\n"
     )
 
     return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)

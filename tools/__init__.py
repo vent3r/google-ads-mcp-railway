@@ -1,2 +1,1 @@
-# Custom analytics tools for Google Ads MCP Server.
-# Each module registers its tools with the MCP coordinator on import.
+# Tools package — each module auto-registers @mcp.tool() on import

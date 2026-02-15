@@ -8,10 +8,9 @@ from tools.helpers import run_query, ResultFormatter
 
 @mcp.tool()
 def list_clients() -> str:
-    """List all Google Ads client accounts under the MCC (Manager Account).
+    """List all Google Ads client accounts under the MCC.
 
-    Returns a table with account name, ID, and status for every child account.
-    No parameters needed.
+    Returns account name, customer ID, and status. No parameters needed.
     """
     mcc_id = os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "").replace("-", "")
     if not mcc_id:
@@ -28,7 +27,6 @@ def list_clients() -> str:
     )
 
     rows = run_query(mcc_id, query)
-
     if not rows:
         return "No client accounts found under this MCC."
 
@@ -36,11 +34,11 @@ def list_clients() -> str:
     for row in rows:
         formatted.append({
             "name": row.get("customer_client.descriptive_name", ""),
-            "id": str(row.get("customer_client.client_customer", "")).replace("customers/", "").replace("-", ""),
+            "id": str(row.get("customer_client.client_customer", ""))
+                .replace("customers/", "").replace("-", ""),
             "status": row.get("customer_client.status", ""),
         })
 
-    # Sort by name
     formatted.sort(key=lambda r: r["name"].lower())
 
     columns = [
@@ -49,4 +47,5 @@ def list_clients() -> str:
         ("status", "Status"),
     ]
 
-    return ResultFormatter.markdown_table(formatted, columns, max_rows=100)
+    return f"**MCC Accounts** ({len(formatted)} clients)\n\n" + \
+        ResultFormatter.markdown_table(formatted, columns, max_rows=100)
