@@ -1,9 +1,7 @@
 """Tool 4: keyword_analysis — Keyword performance with quality score.
 
-Enhancements vs original:
-- quality_info.quality_score, creative_quality_score, post_click_quality_score,
-  search_predicted_ctr
-- Cleaner aggregation and output
+GAQL → aggregate by keyword+campaign+adgroup+match → compute_derived_metrics →
+process_rows (filter/sort/limit) → format_output with QS columns and benchmarks.
 """
 
 import logging
@@ -14,9 +12,17 @@ from tools.helpers import (
     CampaignResolver,
     ClientResolver,
     DateHelper,
-    ResultFormatter,
     compute_derived_metrics,
     run_query,
+)
+from tools.options import (
+    Benchmarks,
+    COLUMNS,
+    OutputFormat,
+    build_footer,
+    build_header,
+    format_output,
+    process_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,31 +34,48 @@ def keyword_analysis(
     date_from: str,
     date_to: str,
     campaign: str = "",
-    min_clicks: int = 0,
-    max_cpa: float = 0,
-    min_conversions: float = 0,
     match_type: str = "ALL",
+    contains: str = "",
+    excludes: str = "",
+    status: str = "",
+    min_clicks: int = 0,
+    min_spend: float = 0,
+    min_conversions: float = 0,
+    max_cpa: float = 0,
+    min_roas: float = 0,
+    min_ctr: float = 0,
+    max_cpc: float = 0,
+    zero_conversions: bool = False,
     sort_by: str = "spend",
     limit: int = 50,
 ) -> str:
     """Analyze keyword performance with quality score data.
 
     Aggregates per-day rows, adds quality score breakdown (QS, creative,
-    landing page, expected CTR), filters and sorts.
+    landing page, expected CTR), applies universal filters and sorts.
 
     Args:
         client: Account name or customer ID.
         date_from: Start date YYYY-MM-DD.
         date_to: End date YYYY-MM-DD.
         campaign: Campaign name or ID (optional).
-        min_clicks: Minimum clicks (default 0).
-        max_cpa: Max CPA filter — 0 = no limit (default 0).
-        min_conversions: Min conversions (default 0).
         match_type: EXACT, PHRASE, BROAD, or ALL (default ALL).
-        sort_by: spend, clicks, conversions, cpa, ctr, or quality_score (default spend).
+        contains: Comma-separated — keep keywords whose text contains ANY of these.
+        excludes: Comma-separated — remove keywords whose text contains ANY of these.
+        status: Filter by status: ENABLED, PAUSED, or empty for all.
+        min_clicks: Minimum clicks (default 0).
+        min_spend: Minimum spend € (default 0).
+        min_conversions: Minimum conversions (default 0).
+        max_cpa: Maximum CPA € — 0 = no limit (default 0).
+        min_roas: Minimum ROAS — 0 = no limit (default 0).
+        min_ctr: Minimum CTR % (default 0).
+        max_cpc: Maximum CPC € — 0 = no limit (default 0).
+        zero_conversions: If true, only show keywords with 0 conversions (default false).
+        sort_by: spend, clicks, conversions, cpa, roas, ctr, quality_score (default spend).
         limit: Max rows (default 50).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     conditions = [DateHelper.date_condition(date_from, date_to)]
     if campaign:
@@ -81,13 +104,13 @@ def keyword_analysis(
     )
 
     rows = run_query(customer_id, query)
-    total_api = len(rows)
 
     # Aggregate by keyword + campaign + adgroup + match_type
     agg = defaultdict(lambda: {
         "campaign.name": "", "ad_group.name": "",
-        "kw_text": "", "kw_match": "", "status": "",
-        "qs": None, "qs_creative": "", "qs_landing": "", "qs_ctr": "",
+        "kw_text": "", "kw_match_type": "",
+        "ad_group_criterion.status": "",
+        "qs": 0, "qs_creative": "", "qs_landing": "", "qs_ctr": "",
         "metrics.impressions": 0, "metrics.clicks": 0,
         "metrics.cost_micros": 0, "metrics.conversions": 0.0,
         "metrics.conversions_value": 0.0,
@@ -104,22 +127,22 @@ def keyword_analysis(
         a["campaign.name"] = camp
         a["ad_group.name"] = ag
         a["kw_text"] = kw
-        a["kw_match"] = mt
-        a["status"] = row.get("ad_group_criterion.status", "")
+        a["kw_match_type"] = mt
+        a["ad_group_criterion.status"] = row.get("ad_group_criterion.status", "")
 
-        # Quality score: take latest non-null value (doesn't change daily)
+        # Quality score: take latest non-null value
         qs = row.get("ad_group_criterion.quality_info.quality_score")
         if qs and qs != 0:
             a["qs"] = int(qs)
         qsc = row.get("ad_group_criterion.quality_info.creative_quality_score", "")
         if qsc:
-            a["qs_creative"] = qsc
+            a["qs_creative"] = str(qsc).replace("_", " ").title()
         qsl = row.get("ad_group_criterion.quality_info.post_click_quality_score", "")
         if qsl:
-            a["qs_landing"] = qsl
+            a["qs_landing"] = str(qsl).replace("_", " ").title()
         qsctr = row.get("ad_group_criterion.quality_info.search_predicted_ctr", "")
         if qsctr:
-            a["qs_ctr"] = qsctr
+            a["qs_ctr"] = str(qsctr).replace("_", " ").title()
 
         a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
         a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
@@ -127,64 +150,57 @@ def keyword_analysis(
         a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
         a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
 
-    # Process
-    processed = []
-    for row in agg.values():
+    # Compute derived metrics
+    aggregated = list(agg.values())
+    for row in aggregated:
         compute_derived_metrics(row)
-        clicks = int(row.get("metrics.clicks", 0))
-        conv = float(row.get("metrics.conversions", 0))
-        cpa = row["_cpa"]
 
-        if clicks < min_clicks:
-            continue
-        if conv < min_conversions:
-            continue
-        if max_cpa > 0 and cpa > max_cpa and conv > 0:
-            continue
-        processed.append(row)
-
-    logger.info("keyword_analysis: %d API rows -> %d keywords", total_api, len(processed))
-
-    # Sort
-    sort_keys = {
-        "spend": "_spend", "clicks": "metrics.clicks",
-        "conversions": "metrics.conversions", "cpa": "_cpa",
-        "ctr": "_ctr", "quality_score": "qs",
-    }
-    sk = sort_keys.get(sort_by.lower(), "_spend")
-    processed.sort(
-        key=lambda r: float(r.get(sk, 0) or 0),
-        reverse=(sort_by.lower() != "cpa"),
+    # Apply options pipeline
+    filtered, total, truncated, filter_desc = process_rows(
+        aggregated,
+        text_field="kw_text",
+        contains=contains,
+        excludes=excludes,
+        status=status,
+        min_clicks=min_clicks,
+        min_spend=min_spend,
+        min_conversions=min_conversions,
+        max_cpa=max_cpa,
+        min_roas=min_roas,
+        min_ctr=min_ctr,
+        max_cpc=max_cpc,
+        zero_conversions=zero_conversions,
+        sort_by=sort_by,
+        ascending=(sort_by.lower() == "cpa"),
+        limit=limit,
     )
 
-    total = len(processed)
-    processed = processed[:limit]
+    # Benchmarks
+    alerts = Benchmarks.summarize_flags(filtered, name_field="kw_text")
 
-    output = []
-    for row in processed:
-        output.append({
-            "keyword": row["kw_text"],
-            "match": row["kw_match"],
-            "campaign": row["campaign.name"],
-            "clicks": ResultFormatter.fmt_int(row["metrics.clicks"]),
-            "spend": ResultFormatter.fmt_currency(row["_spend"]),
-            "conv": f"{float(row['metrics.conversions']):,.1f}",
-            "cpa": ResultFormatter.fmt_currency(row["_cpa"]),
-            "qs": str(row["qs"]) if row["qs"] else "-",
-            "qs_ctr": str(row["qs_ctr"]).replace("_", " ").title() if row["qs_ctr"] else "-",
-            "qs_landing": str(row["qs_landing"]).replace("_", " ").title() if row["qs_landing"] else "-",
-        })
+    # Summary
+    summary = OutputFormat.summary_row(filtered) if filtered else None
 
-    columns = [
-        ("keyword", "Keyword"), ("match", "Match"), ("campaign", "Campaign"),
-        ("clicks", "Clicks"), ("spend", "Spend"), ("conv", "Conv"),
-        ("cpa", "CPA"), ("qs", "QS"), ("qs_ctr", "Exp CTR"),
+    # Columns: KEYWORD preset + QS breakdown
+    columns = COLUMNS.KEYWORD + [
+        ("qs_ctr", "Exp CTR"),
         ("qs_landing", "Landing"),
+        ("qs_creative", "Ad Rel"),
     ]
 
-    header = (
-        f"**Keyword Analysis** — {date_from} to {date_to}\n"
-        f"{total:,} keywords ({total_api:,} API rows). Sorted by {sort_by}.\n\n"
+    # Build output
+    header = build_header(
+        title="Keyword Analysis",
+        client_name=client_name,
+        date_from=date_from,
+        date_to=date_to,
+        filter_desc=filter_desc,
     )
+    footer = build_footer(total, len(filtered), truncated, summary)
 
-    return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)
+    result = format_output(filtered, columns, header=header, footer=footer)
+
+    if alerts:
+        result += f"\n\n{alerts}"
+
+    return result

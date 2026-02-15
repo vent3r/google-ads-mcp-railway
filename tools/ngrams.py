@@ -1,4 +1,9 @@
-"""Tool 6: search_term_ngrams — N-gram aggregation of search terms."""
+"""Tool 6: search_term_ngrams — N-gram aggregation with options.py pipeline.
+
+Step 1: aggregate per-day rows by search term.
+Step 2: extract n-grams and aggregate metrics across terms.
+Step 3: process_rows for filtering/sorting/limiting.
+"""
 
 import logging
 from collections import defaultdict
@@ -8,14 +13,23 @@ from tools.helpers import (
     CampaignResolver,
     ClientResolver,
     DateHelper,
-    ResultFormatter,
     run_query,
+)
+from tools.options import (
+    COLUMNS,
+    OutputFormat,
+    build_footer,
+    build_header,
+    format_output,
+    process_rows,
+    text_match,
 )
 
 logger = logging.getLogger(__name__)
 
 
-def _extract_ngrams(text: str, n: int) -> list[str]:
+def _extract_ngrams(text: str, n: int) -> list:
+    """Extract n-grams from text."""
     words = text.lower().split()
     if len(words) < n:
         return [" ".join(words)] if words else []
@@ -29,11 +43,16 @@ def search_term_ngrams(
     date_to: str,
     campaign: str = "",
     ngram_size: int = 1,
+    contains: str = "",
+    excludes: str = "",
     min_clicks: int = 10,
+    min_spend: float = 0,
+    min_conversions: float = 0,
     max_cpa: float = 0,
+    min_roas: float = 0,
     zero_conversions: bool = False,
     sort_by: str = "spend",
-    limit: int = 30,
+    limit: int = 50,
 ) -> str:
     """Aggregate search terms into n-grams to find spending patterns.
 
@@ -46,13 +65,19 @@ def search_term_ngrams(
         date_to: End date YYYY-MM-DD.
         campaign: Campaign name or ID (optional).
         ngram_size: 1, 2, or 3 (default 1).
+        contains: Comma-separated — keep n-grams containing ANY of these words.
+        excludes: Comma-separated — remove n-grams containing ANY of these words.
         min_clicks: Min aggregated clicks (default 10).
-        max_cpa: Max CPA — 0 = no limit (default 0).
+        min_spend: Minimum spend € (default 0).
+        min_conversions: Minimum conversions (default 0).
+        max_cpa: Max CPA € — 0 = no limit (default 0).
+        min_roas: Minimum ROAS — 0 = no limit (default 0).
         zero_conversions: Only show n-grams with 0 conversions (default false).
-        sort_by: spend, clicks, conversions, or cpa (default spend).
-        limit: Max rows (default 30).
+        sort_by: spend, clicks, conversions, cpa, roas (default spend).
+        limit: Max rows (default 50).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     conditions = [
         DateHelper.date_condition(date_from, date_to),
@@ -71,10 +96,9 @@ def search_term_ngrams(
     )
 
     rows = run_query(customer_id, query)
-    total_api = len(rows)
 
     # Step 1: aggregate by search term
-    term_agg: dict[str, dict] = defaultdict(lambda: {
+    term_agg = defaultdict(lambda: {
         "impressions": 0, "clicks": 0, "cost_micros": 0,
         "conversions": 0.0, "conversions_value": 0.0,
     })
@@ -92,77 +116,81 @@ def search_term_ngrams(
 
     total_terms = len(term_agg)
 
-    # Step 2: extract n-grams
-    ngram_data: dict[str, dict] = defaultdict(lambda: {
-        "clicks": 0, "impressions": 0, "cost_micros": 0,
-        "conversions": 0.0, "conversions_value": 0.0, "terms": set(),
+    # Step 2: extract n-grams and aggregate
+    ngram_data = defaultdict(lambda: {
+        "metrics.clicks": 0, "metrics.impressions": 0, "metrics.cost_micros": 0,
+        "metrics.conversions": 0.0, "metrics.conversions_value": 0.0,
+        "terms": set(),
     })
 
     for term, m in term_agg.items():
         for ng in _extract_ngrams(term, ngram_size):
             d = ngram_data[ng]
-            d["clicks"] += m["clicks"]
-            d["impressions"] += m["impressions"]
-            d["cost_micros"] += m["cost_micros"]
-            d["conversions"] += m["conversions"]
-            d["conversions_value"] += m["conversions_value"]
+            d["metrics.clicks"] += m["clicks"]
+            d["metrics.impressions"] += m["impressions"]
+            d["metrics.cost_micros"] += m["cost_micros"]
+            d["metrics.conversions"] += m["conversions"]
+            d["metrics.conversions_value"] += m["conversions_value"]
             d["terms"].add(term)
 
-    # Filter
-    processed = []
+    # Finalize: compute derived metrics, set ngram field
+    aggregated = []
     for ngram, data in ngram_data.items():
-        spend = data["cost_micros"] / 1_000_000
-        conv = data["conversions"]
-        cpa = spend / conv if conv > 0 else 0.0
+        terms_set = data.pop("terms")
+        data["ngram"] = ngram
+        data["term_count"] = len(terms_set)
 
-        if data["clicks"] < min_clicks:
-            continue
-        if zero_conversions and conv > 0:
-            continue
-        if not zero_conversions and max_cpa > 0 and cpa > max_cpa and conv > 0:
-            continue
+        # Compute derived metrics (needs _spend, _cpa, etc.)
+        cost_micros = float(data["metrics.cost_micros"])
+        spend = cost_micros / 1_000_000
+        conv = float(data["metrics.conversions"])
+        conv_val = float(data["metrics.conversions_value"])
+        clicks = int(data["metrics.clicks"])
+        impr = int(data["metrics.impressions"])
 
-        processed.append({
-            "ngram": ngram,
-            "freq": len(data["terms"]),
-            "clicks": data["clicks"],
-            "spend": round(spend, 2),
-            "conv": round(conv, 1),
-            "cpa": round(cpa, 2),
-            "roas": round(data["conversions_value"] / spend, 2) if spend > 0 else 0.0,
-        })
+        data["_spend"] = round(spend, 2)
+        data["_cpa"] = round(spend / conv, 2) if conv > 0 else 0.0
+        data["_roas"] = round(conv_val / spend, 2) if spend > 0 else 0.0
+        data["_ctr"] = round(clicks / impr * 100, 2) if impr > 0 else 0.0
+        data["_cpc"] = round(spend / clicks, 2) if clicks > 0 else 0.0
 
-    sk = sort_by.lower() if sort_by.lower() in ("spend", "clicks", "conversions", "cpa") else "spend"
-    if sk == "conversions":
-        sk = "conv"
-    processed.sort(key=lambda r: r.get(sk, 0), reverse=True)
+        aggregated.append(data)
 
-    total_match = len(processed)
-    processed = processed[:limit]
-
-    output = []
-    for row in processed:
-        output.append({
-            "ngram": row["ngram"],
-            "freq": str(row["freq"]),
-            "clicks": f"{row['clicks']:,}",
-            "spend": ResultFormatter.fmt_currency(row["spend"]),
-            "conv": f"{row['conv']:,.1f}",
-            "cpa": ResultFormatter.fmt_currency(row["cpa"]),
-            "roas": f"{row['roas']:.2f}",
-        })
-
-    columns = [
-        ("ngram", "N-gram"), ("freq", "Freq"), ("clicks", "Clicks"),
-        ("spend", "Spend"), ("conv", "Conv"), ("cpa", "CPA"), ("roas", "ROAS"),
-    ]
-
-    label = {1: "unigrams", 2: "bigrams", 3: "trigrams"}.get(ngram_size, f"{ngram_size}-grams")
-
-    header = (
-        f"**N-gram Analysis ({label})** — {date_from} to {date_to}\n"
-        f"{total_terms:,} terms ({total_api:,} API rows). "
-        f"{total_match:,} {label} match filters.\n\n"
+    # Apply options pipeline
+    filtered, total, truncated, filter_desc = process_rows(
+        aggregated,
+        text_field="ngram",
+        contains=contains,
+        excludes=excludes,
+        min_clicks=min_clicks,
+        min_spend=min_spend,
+        min_conversions=min_conversions,
+        max_cpa=max_cpa,
+        min_roas=min_roas,
+        zero_conversions=zero_conversions,
+        sort_by=sort_by,
+        limit=limit,
     )
 
-    return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)
+    # Summary
+    summary = OutputFormat.summary_row(filtered) if filtered else None
+
+    # Columns
+    columns = COLUMNS.NGRAM
+
+    label = {1: "unigrams", 2: "bigrams", 3: "trigrams"}.get(
+        ngram_size, f"{ngram_size}-grams"
+    )
+
+    # Build output
+    header = build_header(
+        title=f"N-gram Analysis ({label})",
+        client_name=client_name,
+        date_from=date_from,
+        date_to=date_to,
+        filter_desc=filter_desc,
+        extra=f"{total_terms:,} search terms",
+    )
+    footer = build_footer(total, len(filtered), truncated, summary)
+
+    return format_output(filtered, columns, header=header, footer=footer)

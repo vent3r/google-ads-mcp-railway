@@ -1,4 +1,8 @@
-"""Tool 7: anomaly_detection — Detect anomalous days for a given metric."""
+"""Tool 7: anomaly_detection — Detect anomalous days for a given metric.
+
+Uses standard deviation analysis. Specialized logic — options.py used
+for output formatting and header/footer only.
+"""
 
 import math
 from collections import defaultdict
@@ -9,8 +13,12 @@ from tools.helpers import (
     CampaignResolver,
     ClientResolver,
     DateHelper,
-    ResultFormatter,
     run_query,
+)
+from tools.options import (
+    OutputFormat,
+    build_header,
+    format_output,
 )
 
 
@@ -34,6 +42,7 @@ def anomaly_detection(
         sensitivity: Std dev threshold — 1.5, 2.0, or 2.5 (default 2.0).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=days - 1)
@@ -57,7 +66,7 @@ def anomaly_detection(
     rows = run_query(customer_id, query)
 
     # Aggregate by day
-    daily: dict[str, dict] = defaultdict(lambda: {
+    daily = defaultdict(lambda: {
         "impressions": 0, "clicks": 0, "cost_micros": 0,
         "conversions": 0.0, "conversions_value": 0.0,
     })
@@ -118,9 +127,10 @@ def anomaly_detection(
 
     def fmt(v: float) -> str:
         if metric == "ctr":
-            return ResultFormatter.fmt_percent(v)
-        return ResultFormatter.fmt_currency(v)
+            return f"{v:.1f}%"
+        return f"{v:,.2f}"
 
+    # Format output rows
     output = []
     for a in anomalies:
         output.append({
@@ -136,14 +146,15 @@ def anomaly_detection(
         ("deviation", "Deviation"), ("type", "Type"),
     ]
 
-    header = (
-        f"**Anomaly Detection** — {date_from} to {date_to}\n"
-        f"Metric: {metric} | Sensitivity: {sensitivity}σ\n"
-        f"{n} days analyzed. Mean: {fmt(mean)}/day. Std: {fmt(std)}. "
-        f"{len(anomalies)} anomalies found.\n\n"
+    header = build_header(
+        title="Anomaly Detection",
+        client_name=client_name,
+        date_from=date_from,
+        date_to=date_to,
+        extra=f"Metric: {metric} · Sensitivity: {sensitivity}σ · {n} days · Mean: {fmt(mean)}/day · Std: {fmt(std)} · {len(anomalies)} anomalies",
     )
 
     if not anomalies:
-        return header + "No anomalies detected at current sensitivity."
+        return header + "\n\nNo anomalies detected at current sensitivity."
 
-    return header + ResultFormatter.markdown_table(output, columns, max_rows=50)
+    return format_output(output, columns, header=header)

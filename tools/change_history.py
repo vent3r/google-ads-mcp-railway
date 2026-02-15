@@ -1,8 +1,6 @@
 """Tool 8: change_history — What changed in the account recently.
 
-Uses the change_status resource to show recent modifications:
-campaigns created/removed/paused, budget changes, bid strategy changes, etc.
-Critical for root cause analysis: "why did CPA spike?" → check what changed.
+Uses change_status resource. Critical for root cause analysis.
 """
 
 import logging
@@ -12,8 +10,12 @@ from ads_mcp.coordinator import mcp
 from tools.helpers import (
     ClientResolver,
     DateHelper,
-    ResultFormatter,
     run_query,
+)
+from tools.options import (
+    COLUMNS,
+    build_header,
+    format_output,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,7 @@ def change_history(
         limit: Max rows (default 50).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     days = min(days, 30)
     end = date.today()
@@ -76,7 +79,6 @@ def change_history(
     output = []
     for row in rows:
         dt = str(row.get("change_status.last_change_date_time", ""))
-        # Truncate to readable format (YYYY-MM-DD HH:MM)
         display_dt = dt[:16] if len(dt) >= 16 else dt
 
         res_type = str(row.get("change_status.resource_type", ""))
@@ -107,9 +109,12 @@ def change_history(
         ("status", "New Status"), ("entity", "Entity"),
     ]
 
-    header = (
-        f"**Change History** — last {days} days\n"
-        f"{len(output)} changes found.\n\n"
+    header = build_header(
+        title="Change History",
+        client_name=client_name,
+        date_from=date_from,
+        date_to=date_to,
+        extra=f"{len(output)} changes",
     )
 
-    return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)
+    return format_output(output, columns, header=header)

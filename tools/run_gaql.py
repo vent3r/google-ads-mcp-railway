@@ -1,8 +1,6 @@
-"""Tool 10: run_gaql — Execute raw GAQL queries.
+"""Tool 10: run_gaql — Execute raw GAQL queries (read-only).
 
-Inspired by cohnen/mcp-google-ads. Covers the 5% of use cases that
-the specialized tools don't handle. The agent can write custom GAQL
-for edge cases like landing_page_view, asset performance, etc.
+Covers the 5% of use cases that specialized tools don't handle.
 """
 
 import logging
@@ -10,17 +8,17 @@ import logging
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
     ClientResolver,
-    ResultFormatter,
     run_query,
+)
+from tools.options import (
+    build_header,
+    format_output,
 )
 
 logger = logging.getLogger(__name__)
 
 # Safety: block mutation-capable queries
-BLOCKED_PATTERNS = [
-    "MUTATE", "CREATE", "UPDATE", "REMOVE",
-    "mutate", "create", "update", "remove",
-]
+_BLOCKED = {"MUTATE", "CREATE", "UPDATE", "REMOVE"}
 
 
 @mcp.tool()
@@ -42,14 +40,16 @@ def run_gaql(
             use LIMIT in the query itself if needed.
     """
     # Safety check
-    for pattern in BLOCKED_PATTERNS:
-        if pattern in query:
+    query_upper = query.upper().strip()
+    for word in _BLOCKED:
+        if word in query_upper:
             return f"Error: mutation queries are not allowed. Only SELECT queries."
 
-    if not query.strip().upper().startswith("SELECT"):
+    if not query_upper.startswith("SELECT"):
         return "Error: query must start with SELECT."
 
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     rows = run_query(customer_id, query)
 
@@ -68,6 +68,14 @@ def run_gaql(
     for row in display:
         formatted.append({k: str(v) for k, v in row.items()})
 
-    header = f"**GAQL Result** — {total:,} rows returned\n\n"
+    header = build_header(
+        title="GAQL Result",
+        client_name=client_name,
+        extra=f"{total:,} rows",
+    )
 
-    return header + ResultFormatter.markdown_table(formatted, columns, max_rows=limit)
+    footer = ""
+    if total > limit:
+        footer = f"*Showing {limit} of {total:,} rows.*"
+
+    return format_output(formatted, columns, header=header, footer=footer)

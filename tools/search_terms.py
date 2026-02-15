@@ -1,8 +1,7 @@
-"""Tool 5: search_term_analysis — Search term analysis with aggregation.
+"""Tool 5: search_term_analysis — Search term analysis with options.py pipeline.
 
-Supports server-side text filtering:
-- contains: include only terms matching any of these words
-- excludes: exclude terms matching any of these words
+Server-side text filtering during aggregation loop (contains/excludes applied
+BEFORE aggregation for efficiency). Then options.py for numeric filters/sort/limit.
 """
 
 import logging
@@ -13,9 +12,19 @@ from tools.helpers import (
     CampaignResolver,
     ClientResolver,
     DateHelper,
-    ResultFormatter,
     compute_derived_metrics,
     run_query,
+)
+from tools.options import (
+    Benchmarks,
+    COLUMNS,
+    OutputFormat,
+    build_filter_description,
+    build_footer,
+    build_header,
+    format_output,
+    process_rows,
+    text_match,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,11 +36,14 @@ def search_term_analysis(
     date_from: str,
     date_to: str,
     campaign: str = "",
-    min_clicks: int = 1,
-    max_cpa: float = 0,
-    zero_conversions: bool = False,
     contains: str = "",
     excludes: str = "",
+    min_clicks: int = 1,
+    min_spend: float = 0,
+    min_conversions: float = 0,
+    max_cpa: float = 0,
+    min_roas: float = 0,
+    zero_conversions: bool = False,
     sort_by: str = "spend",
     limit: int = 50,
     detail: bool = False,
@@ -46,16 +58,20 @@ def search_term_analysis(
         date_from: Start date YYYY-MM-DD.
         date_to: End date YYYY-MM-DD.
         campaign: Campaign name or ID (optional).
-        min_clicks: Min clicks to include (default 1).
-        max_cpa: Max CPA — 0 = no limit (default 0).
-        zero_conversions: If true, only show terms with 0 conversions (default false).
         contains: Comma-separated words — keep only terms containing ANY of these (e.g. "pacco,pacchi"). Case-insensitive.
-        excludes: Comma-separated words — remove terms containing ANY of these (e.g. "dhl,ups,bartolini"). Case-insensitive.
-        sort_by: spend, clicks, impressions, cpa, or ctr (default spend).
+        excludes: Comma-separated words — remove terms containing ANY of these (e.g. "dhl,ups"). Case-insensitive.
+        min_clicks: Min clicks to include (default 1).
+        min_spend: Minimum spend € (default 0).
+        min_conversions: Minimum conversions (default 0).
+        max_cpa: Max CPA € — 0 = no limit (default 0).
+        min_roas: Minimum ROAS — 0 = no limit (default 0).
+        zero_conversions: If true, only show terms with 0 conversions (default false).
+        sort_by: spend, clicks, impressions, cpa, ctr, roas (default spend).
         limit: Max rows (default 50).
         detail: If true, show per campaign/adgroup breakdown (default false).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     conditions = [
         DateHelper.date_condition(date_from, date_to),
@@ -65,25 +81,18 @@ def search_term_analysis(
         campaign_id = CampaignResolver.resolve(customer_id, campaign)
         conditions.append(f"campaign.id = {campaign_id}")
 
-    where = " AND ".join(conditions)
-
     query = (
         "SELECT "
         "campaign.name, ad_group.name, "
         "search_term_view.search_term, search_term_view.status, "
         "metrics.impressions, metrics.clicks, metrics.cost_micros, "
         "metrics.conversions, metrics.conversions_value "
-        f"FROM search_term_view WHERE {where}"
+        f"FROM search_term_view WHERE {' AND '.join(conditions)}"
     )
 
     rows = run_query(customer_id, query)
-    total_api = len(rows)
 
-    # Parse text filters
-    include_words = [w.strip().lower() for w in contains.split(",") if w.strip()]
-    exclude_words = [w.strip().lower() for w in excludes.split(",") if w.strip()]
-
-    # Aggregate
+    # Aggregate with server-side text filtering
     if detail:
         group_key = lambda row: (
             row.get("search_term_view.search_term", ""),
@@ -106,14 +115,8 @@ def search_term_analysis(
         if not term:
             continue
 
-        term_lower = term.lower()
-
-        # Apply contains filter: term must contain at least one include word
-        if include_words and not any(w in term_lower for w in include_words):
-            continue
-
-        # Apply excludes filter: term must NOT contain any exclude word
-        if exclude_words and any(w in term_lower for w in exclude_words):
+        # Server-side text filter DURING aggregation (efficient)
+        if (contains or excludes) and not text_match(term, contains, excludes):
             continue
 
         key = group_key(row)
@@ -128,88 +131,63 @@ def search_term_analysis(
         a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
         a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
 
-    # Finalize sets, compute metrics, filter
-    processed = []
+    # Finalize sets, compute metrics
+    aggregated = []
     for a in agg.values():
         camp_set = a.pop("campaigns")
         ag_set = a.pop("adgroups")
-        a["campaign"] = (
+        a["campaign.name"] = (
             f"{len(camp_set)} campaigns" if len(camp_set) > 1
             else next(iter(camp_set), "")
         )
-        a["adgroup"] = (
+        a["ad_group.name"] = (
             f"{len(ag_set)} ad groups" if len(ag_set) > 1
             else next(iter(ag_set), "")
         )
         compute_derived_metrics(a)
-
-        clicks = int(a.get("metrics.clicks", 0))
-        conv = float(a.get("metrics.conversions", 0))
-        cpa = a["_cpa"]
-
-        if clicks < min_clicks:
-            continue
-        if zero_conversions and conv > 0:
-            continue
-        if not zero_conversions and max_cpa > 0 and cpa > max_cpa and conv > 0:
-            continue
-        processed.append(a)
+        aggregated.append(a)
 
     total_unique = len(agg)
-    total_filtered = len(processed)
-    logger.info(
-        "search_term_analysis: %d API rows -> %d unique -> %d filtered",
-        total_api, total_unique, total_filtered,
+
+    # Apply options pipeline (text filter already applied, pass empty contains/excludes)
+    filtered, total, truncated, filter_desc = process_rows(
+        aggregated,
+        text_field="",  # text already filtered during aggregation
+        contains="",
+        excludes="",
+        min_clicks=min_clicks,
+        min_spend=min_spend,
+        min_conversions=min_conversions,
+        max_cpa=max_cpa,
+        min_roas=min_roas,
+        zero_conversions=zero_conversions,
+        sort_by=sort_by,
+        limit=limit,
     )
 
-    # Sort
-    sort_keys = {
-        "spend": "_spend", "clicks": "metrics.clicks",
-        "impressions": "metrics.impressions", "cpa": "_cpa", "ctr": "_ctr",
-    }
-    sk = sort_keys.get(sort_by.lower(), "_spend")
-    processed.sort(key=lambda r: float(r.get(sk, 0) or 0), reverse=True)
-    display = processed[:limit]
-
-    # Format
-    output = []
-    for row in display:
-        output.append({
-            "term": row["term"],
-            "campaign": row["campaign"],
-            "adgroup": row["adgroup"],
-            "clicks": ResultFormatter.fmt_int(row["metrics.clicks"]),
-            "spend": ResultFormatter.fmt_currency(row["_spend"]),
-            "conv": f"{float(row['metrics.conversions']):,.1f}",
-            "cpa": ResultFormatter.fmt_currency(row["_cpa"]),
-            "roas": f"{row['_roas']:.2f}",
-        })
-
-    columns = [
-        ("term", "Search Term"), ("campaign", "Campaign"),
-        ("adgroup", "Ad Group"), ("clicks", "Clicks"),
-        ("spend", "Spend"), ("conv", "Conv"),
-        ("cpa", "CPA"), ("roas", "ROAS"),
-    ]
-
-    # Build filter description
-    filters = []
-    if include_words:
-        filters.append(f"contains: {','.join(include_words)}")
-    if exclude_words:
-        filters.append(f"excludes: {','.join(exclude_words)}")
-    if min_clicks > 1:
-        filters.append(f"clicks >= {min_clicks}")
-    if zero_conversions:
-        filters.append("zero conversions only")
-    if max_cpa > 0:
-        filters.append(f"CPA <= {max_cpa}")
-    filter_str = f" Filters: {'; '.join(filters)}." if filters else ""
-
-    header = (
-        f"**Search Term Analysis** — {date_from} to {date_to}\n"
-        f"{total_unique:,} unique terms ({total_api:,} API rows). "
-        f"{total_filtered:,} match filters.{filter_str} Sorted by {sort_by}.\n\n"
+    # Manually add text filter info since we skipped it in process_rows
+    filter_desc = build_filter_description(
+        contains=contains, excludes=excludes,
+        min_clicks=min_clicks, min_spend=min_spend,
+        min_conversions=min_conversions, max_cpa=max_cpa,
+        min_roas=min_roas, zero_conversions=zero_conversions,
     )
 
-    return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)
+    # Summary
+    summary = OutputFormat.summary_row(filtered) if filtered else None
+
+    # Columns
+    columns = COLUMNS.SEARCH_TERM_DETAIL if detail else COLUMNS.SEARCH_TERM
+
+    # Build output
+    header = build_header(
+        title="Search Term Analysis",
+        client_name=client_name,
+        date_from=date_from,
+        date_to=date_to,
+        filter_desc=filter_desc,
+        extra=f"{total_unique:,} unique terms",
+    )
+    footer = build_footer(total, len(filtered), truncated, summary)
+
+    return format_output(filtered, columns, header=header, footer=footer)

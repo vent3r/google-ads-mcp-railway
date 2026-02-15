@@ -1,51 +1,35 @@
 """Tool 11: keyword_ideas — Generate keyword ideas via KeywordPlanIdeaService.
 
 Requires Standard Access on the MCC developer token.
-Uses the google-ads-python SDK through ads_mcp.utils.
-
-Default targeting: Italy (2380), Italian (1014) — override with params.
+Default targeting: Italy (2380), Italian (1014).
 """
 
 import logging
-from typing import List, Optional
 
 import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
     ClientResolver,
-    ResultFormatter,
     QuotaTracker,
+)
+from tools.options import (
+    build_header,
+    format_output,
 )
 
 logger = logging.getLogger(__name__)
 
-# Common location IDs (geo_target_constants)
-# Full list: https://developers.google.com/google-ads/api/reference/data/geotargets
+# Common location IDs
 LOCATION_IDS = {
-    "IT": "2380",   # Italy
-    "US": "2840",   # United States
-    "UK": "2826",   # United Kingdom
-    "DE": "2276",   # Germany
-    "FR": "2250",   # France
-    "ES": "2724",   # Spain
+    "IT": "2380", "US": "2840", "UK": "2826",
+    "DE": "2276", "FR": "2250", "ES": "2724",
 }
 
 # Common language IDs
-# Full list: https://developers.google.com/google-ads/api/reference/data/codes-formats#languages
 LANGUAGE_IDS = {
-    "it": "1014",   # Italian
-    "en": "1000",   # English
-    "de": "1001",   # German
-    "fr": "1002",   # French
-    "es": "1003",   # Spanish
+    "it": "1014", "en": "1000", "de": "1001",
+    "fr": "1002", "es": "1003",
 }
-
-
-def _map_location_ids_to_resource_names(location_ids: List[str]) -> List[str]:
-    """Convert location ID strings to resource name format."""
-    ga_service = utils.get_googleads_service("GoogleAdsService")
-    build_rn = ga_service.geo_target_constant_path
-    return [build_rn(loc_id) for loc_id in location_ids]
 
 
 @mcp.tool()
@@ -73,6 +57,7 @@ def keyword_ideas(
         include_adult: Include adult keywords (default false).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     # Parse keywords
     keyword_list = [k.strip() for k in keywords.split(",") if k.strip()]
@@ -101,7 +86,8 @@ def keyword_ideas(
         )
         request.include_adult_keywords = include_adult
         request.keyword_plan_network = (
-            utils.get_googleads_type("KeywordPlanNetworkEnum").KeywordPlanNetwork.GOOGLE_SEARCH_AND_PARTNERS
+            utils.get_googleads_type("KeywordPlanNetworkEnum")
+            .KeywordPlanNetwork.GOOGLE_SEARCH_AND_PARTNERS
         )
         request.page_size = max_results
 
@@ -132,9 +118,9 @@ def keyword_ideas(
                 "avg_searches": f"{avg_searches:,}",
                 "competition": competition,
                 "comp_idx": str(comp_index),
-                "low_bid": ResultFormatter.fmt_currency(low_bid),
-                "high_bid": ResultFormatter.fmt_currency(high_bid),
-                "_avg_searches_raw": avg_searches,
+                "low_bid": f"{low_bid:,.2f}",
+                "high_bid": f"{high_bid:,.2f}",
+                "_sort": avg_searches,
             })
 
             if len(results) >= max_results:
@@ -149,13 +135,9 @@ def keyword_ideas(
             )
 
         # Sort by search volume descending
-        results.sort(key=lambda r: r["_avg_searches_raw"], reverse=True)
-
-        # Format output
-        output = []
+        results.sort(key=lambda r: r["_sort"], reverse=True)
         for r in results:
-            r.pop("_avg_searches_raw")
-            output.append(r)
+            r.pop("_sort")
 
         columns = [
             ("keyword", "Keyword"),
@@ -167,14 +149,15 @@ def keyword_ideas(
         ]
 
         seeds_str = ", ".join(keyword_list) if keyword_list else "none"
-        header = (
-            f"**Keyword Ideas** — {len(results)} results\n"
-            f"Seeds: {seeds_str}"
-            f"{f' | URL: {page_url}' if page_url else ''}\n"
-            f"Targeting: {country.upper()} / {language}\n\n"
+        header = build_header(
+            title="Keyword Ideas",
+            client_name=client_name,
+            extra=f"{len(results)} results · Seeds: {seeds_str}"
+                  f"{f' · URL: {page_url}' if page_url else ''}"
+                  f" · {country.upper()}/{language}",
         )
 
-        return header + ResultFormatter.markdown_table(output, columns, max_rows=max_results)
+        return format_output(results, columns, header=header)
 
     except Exception as e:
         error_msg = str(e)

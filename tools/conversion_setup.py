@@ -1,8 +1,6 @@
 """Tool 9: conversion_setup — Audit conversion tracking configuration.
 
-Shows all conversion actions with their status, attribution model,
-lookback windows, and include_in_conversions setting.
-Critical for: "why did conversions drop?" → maybe a conversion action was disabled.
+Shows all conversion actions with status, attribution model, lookback windows.
 """
 
 import logging
@@ -10,8 +8,12 @@ import logging
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
     ClientResolver,
-    ResultFormatter,
     run_query,
+)
+from tools.options import (
+    COLUMNS,
+    build_header,
+    format_output,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +35,7 @@ def conversion_setup(
         status_filter: ENABLED, HIDDEN, REMOVED, or ALL (default ALL).
     """
     customer_id = ClientResolver.resolve(client)
+    client_name = ClientResolver.resolve_name(customer_id)
 
     status_clause = ""
     if status_filter.upper() != "ALL":
@@ -82,27 +85,23 @@ def conversion_setup(
         output.append({
             "name": row.get("conversion_action.name", ""),
             "status": row.get("conversion_action.status", ""),
-            "type": conv_type,
             "category": category,
             "included": "✓" if included else "✗",
-            "model": attr_model,
-            "lookback": f"{lookback}d" if lookback else "-",
-            "counting": counting,
+            "attribution_model": attr_model,
+            "lookback_window_days": f"{lookback}d" if lookback else "-",
+            "counting_type": counting,
+            "include_in_conversions": "✓" if included else "✗",
         })
 
     # Sort: included first, then by name
     output.sort(key=lambda r: (r["included"] != "✓", r["name"].lower()))
 
-    columns = [
-        ("name", "Conversion Action"), ("status", "Status"),
-        ("type", "Type"), ("category", "Category"),
-        ("included", "In Conv?"), ("model", "Attribution"),
-        ("lookback", "Lookback"), ("counting", "Counting"),
-    ]
+    columns = COLUMNS.CONVERSION_SETUP
 
-    header = (
-        f"**Conversion Setup Audit**\n"
-        f"{len(output)} conversion actions ({included_count} included in Conversions column).\n\n"
+    header = build_header(
+        title="Conversion Setup Audit",
+        client_name=client_name,
+        extra=f"{len(output)} actions ({included_count} in Conversions column)",
     )
 
-    return header + ResultFormatter.markdown_table(output, columns, max_rows=100)
+    return format_output(output, columns, header=header)
