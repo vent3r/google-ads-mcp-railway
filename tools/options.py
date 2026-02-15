@@ -369,24 +369,66 @@ def format_output(
     header: str = "",
     footer: str = "",
     output_format: str = "markdown",
+    output_mode: str = "summary",
+    all_rows: Optional[List[Dict[str, Any]]] = None,
+    summary_limit: int = 10,
 ) -> str:
     """Full output pipeline: header + table + footer.
 
     Args:
         output_format: "markdown" (default) or "csv"
+        output_mode: "summary" (default) or "full"
+            - summary: shows top N rows + totals + "N more available"
+            - full: shows all rows passed in
+        all_rows: complete filtered+sorted dataset BEFORE limit (for summary totals).
+            If None, totals are computed from rows.
+        summary_limit: how many rows to show in summary mode (default 10)
     """
     parts = []
 
     if header:
         parts.append(header)
 
-    if output_format == "csv":
-        parts.append(OutputFormat.csv_string(rows, columns))
-    else:
-        parts.append(OutputFormat.markdown_table(rows, columns))
+    if output_mode == "summary" and len(rows) > summary_limit:
+        # Summary mode: show top N + totals over ALL data
+        display = rows[:summary_limit]
+        data_for_totals = all_rows if all_rows is not None else rows
+        summary = OutputFormat.summary_row(data_for_totals)
 
-    if footer:
-        parts.append(footer)
+        if output_format == "csv":
+            parts.append(OutputFormat.csv_string(display, columns))
+        else:
+            parts.append(OutputFormat.markdown_table(display, columns))
+
+        # Summary totals
+        remaining = len(rows) - summary_limit
+        total_data = len(data_for_totals)
+        summary_parts = []
+        if summary:
+            spend = summary.get("_spend", 0)
+            conv = summary.get("metrics.conversions", 0)
+            roas = summary.get("_roas", 0)
+            cpa = summary.get("_cpa", 0)
+            clicks = summary.get("metrics.clicks", 0)
+            summary_parts.append(
+                f"**Totals ({total_data:,} rows)**: "
+                f"Spend €{spend:,.2f} · Clicks {clicks:,} · "
+                f"Conv {conv:,.1f} · CPA €{cpa:,.2f} · ROAS {roas:.2f}x"
+            )
+        summary_parts.append(
+            f"*Showing top {summary_limit} of {len(rows):,} results. "
+            f"Ask for full data or increase limit to see more.*"
+        )
+        parts.append("\n".join(summary_parts))
+    else:
+        # Full mode or small dataset: show everything
+        if output_format == "csv":
+            parts.append(OutputFormat.csv_string(rows, columns))
+        else:
+            parts.append(OutputFormat.markdown_table(rows, columns))
+
+        if footer:
+            parts.append(footer)
 
     return "\n\n".join(parts)
 
