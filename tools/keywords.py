@@ -1,5 +1,8 @@
 """Tool 4: keyword_analysis — Keyword performance with advanced filters."""
 
+import logging
+from collections import defaultdict
+
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
     CampaignResolver,
@@ -9,6 +12,8 @@ from tools.helpers import (
     compute_derived_metrics,
     run_query,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @mcp.tool()
@@ -25,6 +30,9 @@ def keyword_analysis(
     limit: int = 50,
 ) -> str:
     """Analyze keyword performance with advanced filtering.
+
+    Fetches all keyword rows across the date range, aggregates metrics by
+    unique keyword (collapsing per-day rows), then filters and returns results.
 
     Args:
         client: Account name or customer ID.
@@ -64,8 +72,48 @@ def keyword_analysis(
     )
 
     rows = run_query(customer_id, query)
+    total_api_rows = len(rows)
 
-    # Compute and filter
+    # Aggregate by keyword+campaign+adgroup+match_type to collapse per-day rows
+    agg_map = defaultdict(lambda: {
+        "campaign.name": "",
+        "ad_group.name": "",
+        "ad_group_criterion.keyword.text": "",
+        "ad_group_criterion.keyword.match_type": "",
+        "ad_group_criterion.status": "",
+        "metrics.impressions": 0,
+        "metrics.clicks": 0,
+        "metrics.cost_micros": 0,
+        "metrics.conversions": 0.0,
+        "metrics.conversions_value": 0.0,
+    })
+
+    for row in rows:
+        kw_text = row.get("ad_group_criterion.keyword.text", "")
+        campaign_name = row.get("campaign.name", "")
+        adgroup_name = row.get("ad_group.name", "")
+        kw_match = row.get("ad_group_criterion.keyword.match_type", "")
+        key = (kw_text, campaign_name, adgroup_name, kw_match)
+
+        a = agg_map[key]
+        a["campaign.name"] = campaign_name
+        a["ad_group.name"] = adgroup_name
+        a["ad_group_criterion.keyword.text"] = kw_text
+        a["ad_group_criterion.keyword.match_type"] = kw_match
+        a["ad_group_criterion.status"] = row.get("ad_group_criterion.status", "")
+        a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+
+    rows = list(agg_map.values())
+    logger.info(
+        "keyword_analysis: %d API rows -> %d unique keywords",
+        total_api_rows, len(rows),
+    )
+
+    # Compute derived metrics and filter
     processed = []
     for row in rows:
         compute_derived_metrics(row)
@@ -99,17 +147,19 @@ def keyword_analysis(
     # Format
     output = []
     for row in processed:
-        ctr_val = float(row.get("metrics.ctr", 0) or 0)
+        impressions = int(row.get("metrics.impressions", 0) or 0)
+        clicks = int(row.get("metrics.clicks", 0) or 0)
+        ctr = (clicks / impressions * 100) if impressions > 0 else 0.0
         output.append({
             "campaign": row.get("campaign.name", ""),
             "adgroup": row.get("ad_group.name", ""),
             "keyword": row.get("ad_group_criterion.keyword.text", ""),
             "match": row.get("ad_group_criterion.keyword.match_type", ""),
-            "clicks": f"{int(row.get('metrics.clicks', 0) or 0):,}",
+            "clicks": f"{clicks:,}",
             "spend": ResultFormatter.format_currency(row["_spend"]),
             "conversions": f"{float(row.get('metrics.conversions', 0) or 0):,.1f}",
             "cpa": ResultFormatter.format_currency(row["_cpa"]),
-            "ctr": ResultFormatter.format_percent(ctr_val * 100 if ctr_val < 1 else ctr_val),
+            "ctr": ResultFormatter.format_percent(ctr),
         })
 
     columns = [
@@ -137,7 +187,8 @@ def keyword_analysis(
 
     header = (
         f"**Keyword Analysis** — {date_from} to {date_to}\n"
-        f"Found {total:,} keywords (filters: {filters_str}). Sorted by {sort_by}.\n\n"
+        f"Found {total:,} keywords ({total_api_rows:,} API rows aggregated; "
+        f"filters: {filters_str}). Sorted by {sort_by}.\n\n"
     )
 
     return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)
