@@ -19,6 +19,8 @@ from ads_mcp.tools import search, core  # noqa: F401
 # Custom analytics tools — import triggers @mcp.tool() registration
 from tools import clients, campaigns, adgroups, keywords  # noqa: F401
 from tools import search_terms, ngrams, anomalies  # noqa: F401
+from tools import change_history, conversion_setup, run_gaql  # noqa: F401
+from tools import keyword_ideas  # noqa: F401
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +47,6 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         if allowedIps:
             ipList = [ip.strip() for ip in allowedIps.split(",") if ip.strip()]
             clientIp = request.client.host
-            # Also check X-Forwarded-For (Railway proxy)
             forwardedFor = request.headers.get("x-forwarded-for", "")
             forwardedIp = forwardedFor.split(",")[0].strip() if forwardedFor else ""
 
