@@ -2,8 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Pin to a specific commit for security
-# Verify latest at: https://github.com/googleads/google-ads-mcp/commits/main/
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir \
     "google-ads-mcp @ git+https://github.com/googleads/google-ads-mcp.git@85dab37"
 
