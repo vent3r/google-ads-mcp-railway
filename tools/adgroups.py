@@ -45,6 +45,7 @@ def adgroup_analysis(
     zero_conversions: bool = False,
     sort_by: str = "spend",
     limit: int = 50,
+    output_mode: str = "summary",
 ) -> str:
     """Analyze ad group performance, optionally filtered by campaign.
 
@@ -67,6 +68,7 @@ def adgroup_analysis(
         zero_conversions: If true, only show ad groups with 0 conversions (default false).
         sort_by: spend, clicks, conversions, cpa, roas, ctr (default spend).
         limit: Max rows (default 50).
+        output_mode: "summary" (top 10 + totals) or "full" (all rows). Default summary.
     """
     customer_id = ClientResolver.resolve(client)
     client_name = ClientResolver.resolve_name(customer_id)
@@ -152,7 +154,7 @@ def adgroup_analysis(
     )
     footer = build_footer(total, len(filtered), truncated, summary)
 
-    result = format_output(filtered, columns, header=header, footer=footer)
+    result = format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)
 
     if alerts:
         result += f"\n\n{alerts}"

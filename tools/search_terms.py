@@ -47,6 +47,7 @@ def search_term_analysis(
     sort_by: str = "spend",
     limit: int = 50,
     detail: bool = False,
+    output_mode: str = "summary",
 ) -> str:
     """Analyze search terms with server-side aggregation and text filtering.
 
@@ -69,6 +70,7 @@ def search_term_analysis(
         sort_by: spend, clicks, impressions, cpa, ctr, roas (default spend).
         limit: Max rows (default 50).
         detail: If true, show per campaign/adgroup breakdown (default false).
+        output_mode: "summary" (top 10 + totals) or "full" (all rows). Default summary.
     """
     customer_id = ClientResolver.resolve(client)
     client_name = ClientResolver.resolve_name(customer_id)
@@ -190,4 +192,4 @@ def search_term_analysis(
     )
     footer = build_footer(total, len(filtered), truncated, summary)
 
-    return format_output(filtered, columns, header=header, footer=footer)
+    return format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)

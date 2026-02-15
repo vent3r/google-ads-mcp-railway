@@ -53,6 +53,7 @@ def search_term_ngrams(
     zero_conversions: bool = False,
     sort_by: str = "spend",
     limit: int = 50,
+    output_mode: str = "summary",
 ) -> str:
     """Aggregate search terms into n-grams to find spending patterns.
 
@@ -75,6 +76,7 @@ def search_term_ngrams(
         zero_conversions: Only show n-grams with 0 conversions (default false).
         sort_by: spend, clicks, conversions, cpa, roas (default spend).
         limit: Max rows (default 50).
+        output_mode: "summary" (top 10 + totals) or "full" (all rows). Default summary.
     """
     customer_id = ClientResolver.resolve(client)
     client_name = ClientResolver.resolve_name(customer_id)
@@ -193,4 +195,4 @@ def search_term_ngrams(
     )
     footer = build_footer(total, len(filtered), truncated, summary)
 
-    return format_output(filtered, columns, header=header, footer=footer)
+    return format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)

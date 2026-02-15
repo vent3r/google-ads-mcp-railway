@@ -48,6 +48,7 @@ def keyword_analysis(
     zero_conversions: bool = False,
     sort_by: str = "spend",
     limit: int = 50,
+    output_mode: str = "summary",
 ) -> str:
     """Analyze keyword performance with quality score data.
 
@@ -73,6 +74,7 @@ def keyword_analysis(
         zero_conversions: If true, only show keywords with 0 conversions (default false).
         sort_by: spend, clicks, conversions, cpa, roas, ctr, quality_score (default spend).
         limit: Max rows (default 50).
+        output_mode: "summary" (top 10 + totals) or "full" (all rows). Default summary.
     """
     customer_id = ClientResolver.resolve(client)
     client_name = ClientResolver.resolve_name(customer_id)
@@ -198,7 +200,7 @@ def keyword_analysis(
     )
     footer = build_footer(total, len(filtered), truncated, summary)
 
-    result = format_output(filtered, columns, header=header, footer=footer)
+    result = format_output(filtered, columns, header=header, footer=footer, output_mode=output_mode)
 
     if alerts:
         result += f"\n\n{alerts}"
