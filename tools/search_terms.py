@@ -1,4 +1,9 @@
-"""Tool 5: search_term_analysis — Search term analysis with aggregation."""
+"""Tool 5: search_term_analysis — Search term analysis with aggregation.
+
+Supports server-side text filtering:
+- contains: include only terms matching any of these words
+- excludes: exclude terms matching any of these words
+"""
 
 import logging
 from collections import defaultdict
@@ -25,11 +30,13 @@ def search_term_analysis(
     min_clicks: int = 1,
     max_cpa: float = 0,
     zero_conversions: bool = False,
+    contains: str = "",
+    excludes: str = "",
     sort_by: str = "spend",
     limit: int = 50,
     detail: bool = False,
 ) -> str:
-    """Analyze search terms with server-side aggregation.
+    """Analyze search terms with server-side aggregation and text filtering.
 
     Default: one row per unique search term (campaigns/adgroups shown as count).
     Detail mode: one row per search term × campaign × ad group.
@@ -42,6 +49,8 @@ def search_term_analysis(
         min_clicks: Min clicks to include (default 1).
         max_cpa: Max CPA — 0 = no limit (default 0).
         zero_conversions: If true, only show terms with 0 conversions (default false).
+        contains: Comma-separated words — keep only terms containing ANY of these (e.g. "pacco,pacchi"). Case-insensitive.
+        excludes: Comma-separated words — remove terms containing ANY of these (e.g. "dhl,ups,bartolini"). Case-insensitive.
         sort_by: spend, clicks, impressions, cpa, or ctr (default spend).
         limit: Max rows (default 50).
         detail: If true, show per campaign/adgroup breakdown (default false).
@@ -70,16 +79,18 @@ def search_term_analysis(
     rows = run_query(customer_id, query)
     total_api = len(rows)
 
+    # Parse text filters
+    include_words = [w.strip().lower() for w in contains.split(",") if w.strip()]
+    exclude_words = [w.strip().lower() for w in excludes.split(",") if w.strip()]
+
     # Aggregate
     if detail:
-        # Group by term + campaign + adgroup
         group_key = lambda row: (
             row.get("search_term_view.search_term", ""),
             row.get("campaign.name", ""),
             row.get("ad_group.name", ""),
         )
     else:
-        # Group by term only
         group_key = lambda row: (row.get("search_term_view.search_term", ""),)
 
     agg = defaultdict(lambda: {
@@ -94,6 +105,17 @@ def search_term_analysis(
         term = row.get("search_term_view.search_term", "")
         if not term:
             continue
+
+        term_lower = term.lower()
+
+        # Apply contains filter: term must contain at least one include word
+        if include_words and not any(w in term_lower for w in include_words):
+            continue
+
+        # Apply excludes filter: term must NOT contain any exclude word
+        if exclude_words and any(w in term_lower for w in exclude_words):
+            continue
+
         key = group_key(row)
         a = agg[key]
         a["term"] = term
@@ -170,10 +192,24 @@ def search_term_analysis(
         ("cpa", "CPA"), ("roas", "ROAS"),
     ]
 
+    # Build filter description
+    filters = []
+    if include_words:
+        filters.append(f"contains: {','.join(include_words)}")
+    if exclude_words:
+        filters.append(f"excludes: {','.join(exclude_words)}")
+    if min_clicks > 1:
+        filters.append(f"clicks >= {min_clicks}")
+    if zero_conversions:
+        filters.append("zero conversions only")
+    if max_cpa > 0:
+        filters.append(f"CPA <= {max_cpa}")
+    filter_str = f" Filters: {'; '.join(filters)}." if filters else ""
+
     header = (
         f"**Search Term Analysis** — {date_from} to {date_to}\n"
         f"{total_unique:,} unique terms ({total_api:,} API rows). "
-        f"{total_filtered:,} match filters. Sorted by {sort_by}.\n\n"
+        f"{total_filtered:,} match filters.{filter_str} Sorted by {sort_by}.\n\n"
     )
 
     return header + ResultFormatter.markdown_table(output, columns, max_rows=limit)
