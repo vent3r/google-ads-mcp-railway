@@ -1,0 +1,24 @@
+name: Auto-merge Claude Code PRs
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: contains(github.head_ref, 'claude/')
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              merge_method: 'squash'
+            });
