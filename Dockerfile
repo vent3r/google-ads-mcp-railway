@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir \
 
 COPY entrypoint.sh /app/entrypoint.sh
 COPY run_sse.py /app/run_sse.py
+COPY run_server.py /app/run_server.py
 COPY tools/ /app/tools/
 RUN chmod +x /app/entrypoint.sh
 

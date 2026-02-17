@@ -15,4 +15,4 @@ EOF
 export GOOGLE_APPLICATION_CREDENTIALS="/tmp/adc.json"
 
 echo "Starting Google Ads MCP Server on port ${PORT:-8080}..."
-exec python /app/run_sse.py
+exec python /app/run_server.py
