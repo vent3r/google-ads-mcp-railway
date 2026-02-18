@@ -1,6 +1,7 @@
 """W7: Update keyword CPC bid."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver, run_query
 from tools.validation import validate_mode, validate_bid_amount, euros_to_micros, micros_to_euros
@@ -12,11 +13,6 @@ from google.protobuf import field_mask_pb2
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -89,9 +85,8 @@ def update_keyword_bid(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("AdGroupCriterionService")
-        op = ads_client.get_type("AdGroupCriterionOperation")
+        svc = utils.get_googleads_service("AdGroupCriterionService")
+        op = utils.get_googleads_type("AdGroupCriterionOperation")
         op.update.resource_name = svc.ad_group_criterion_path(customer_id, adgroup_id, criterion_id)
         op.update.cpc_bid_micros = new_micros
         op.update_mask = field_mask_pb2.FieldMask(paths=["cpc_bid_micros"])

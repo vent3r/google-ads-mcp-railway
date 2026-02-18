@@ -20,6 +20,24 @@ from tools import search_terms, ngrams, anomalies  # noqa: F401
 from tools import change_history, conversion_setup, run_gaql  # noqa: F401
 from tools import keyword_ideas  # noqa: F401
 
+# 13 new read tools
+from tools import suggest_negatives, keyword_opportunities  # noqa: F401
+from tools import device_breakdown, ad_analysis, geo_breakdown  # noqa: F401
+from tools import hour_day_analysis, auction_insights  # noqa: F401
+from tools import landing_page_analysis, budget_pacing  # noqa: F401
+from tools import campaign_overview, optimization_suggestions  # noqa: F401
+from tools import duplicate_keywords, qs_breakdown  # noqa: F401
+
+# 15 write tools
+from tools import update_budget, set_campaign_status  # noqa: F401
+from tools import set_adgroup_status, add_negatives  # noqa: F401
+from tools import remove_negatives, set_keyword_status  # noqa: F401
+from tools import update_keyword_bid, create_campaign  # noqa: F401
+from tools import create_adgroup, add_keywords  # noqa: F401
+from tools import create_rsa, set_ad_status  # noqa: F401
+from tools import set_bid_adjustments, create_sitelinks  # noqa: F401
+from tools import set_audience_targeting  # noqa: F401
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 

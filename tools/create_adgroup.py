@@ -1,6 +1,7 @@
 """W9: Create an ad group."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_bid_amount, euros_to_micros
@@ -11,11 +12,6 @@ from tools.name_resolver import resolve_campaign
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -69,13 +65,12 @@ def create_adgroup(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("AdGroupService")
-        op = ads_client.get_type("AdGroupOperation")
+        svc = utils.get_googleads_service("AdGroupService")
+        op = utils.get_googleads_type("AdGroupOperation")
         ad_group = op.create
         ad_group.name = name
         ad_group.campaign = svc.campaign_path(customer_id, campaign_id)
-        ad_group.status = ads_client.enums.AdGroupStatusEnum.AdGroupStatus.ENABLED
+        ad_group.status = utils._googleads_client.enums.AdGroupStatusEnum.AdGroupStatus.ENABLED
         if cpc_bid_eur > 0:
             ad_group.cpc_bid_micros = euros_to_micros(cpc_bid_eur)
 

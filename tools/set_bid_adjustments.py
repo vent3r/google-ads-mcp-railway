@@ -1,6 +1,7 @@
 """W13: Set bid adjustments by device or location."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_numeric_range, validate_enum
@@ -12,11 +13,6 @@ from google.protobuf import field_mask_pb2
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -70,13 +66,12 @@ def set_bid_adjustments(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("CampaignCriterionService")
-        op = ads_client.get_type("CampaignCriterionOperation")
+        svc = utils.get_googleads_service("CampaignCriterionService")
+        op = utils.get_googleads_type("CampaignCriterionOperation")
 
         if dimension.upper() == "DEVICE":
             op.create.campaign = svc.campaign_path(customer_id, campaign_id)
-            op.create.device.type_ = ads_client.enums.DeviceEnum.Device[criterion.upper()]
+            op.create.device.type_ = utils._googleads_client.enums.DeviceEnum.Device[criterion.upper()]
             op.create.bid_modifier = modifier
         else:  # LOCATION
             op.create.campaign = svc.campaign_path(customer_id, campaign_id)

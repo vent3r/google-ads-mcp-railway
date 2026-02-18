@@ -1,6 +1,7 @@
 """W11: Create a responsive search ad (RSA)."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_headline, validate_description, validate_url
@@ -11,11 +12,6 @@ from tools.name_resolver import resolve_campaign, resolve_adgroup
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -92,9 +88,8 @@ def create_rsa(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("AdGroupAdService")
-        op = ads_client.get_type("AdGroupAdOperation")
+        svc = utils.get_googleads_service("AdGroupAdService")
+        op = utils.get_googleads_type("AdGroupAdOperation")
         ad = op.create.ad
         ad.final_urls.append(final_url)
         if path1:
