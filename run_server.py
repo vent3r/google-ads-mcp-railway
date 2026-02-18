@@ -31,20 +31,38 @@ from ads_mcp.coordinator import mcp  # noqa: E402
 # ---------------------------------------------------------------------------
 # Tool registration — import triggers @mcp.tool() decorator
 # ---------------------------------------------------------------------------
+
+# 11 original read tools
 from tools import clients, campaigns, adgroups, keywords  # noqa: E402, F401
 from tools import search_terms, ngrams, anomalies  # noqa: E402, F401
+from tools import change_history, conversion_setup, run_gaql  # noqa: E402, F401
+from tools import keyword_ideas  # noqa: E402, F401
 
+# 13 new read tools
 try:
-    from tools import change_history, conversion_setup, run_gaql  # noqa: F401
-    logger.info("Loaded: change_history, conversion_setup, run_gaql")
+    from tools import suggest_negatives, keyword_opportunities  # noqa: F401
+    from tools import device_breakdown, ad_analysis, geo_breakdown  # noqa: F401
+    from tools import hour_day_analysis, auction_insights  # noqa: F401
+    from tools import landing_page_analysis, budget_pacing  # noqa: F401
+    from tools import campaign_overview, optimization_suggestions  # noqa: F401
+    from tools import duplicate_keywords, qs_breakdown  # noqa: F401
+    logger.info("Loaded: 13 new read tools")
 except Exception as e:
-    logger.error("FAILED to load change_history/conversion_setup/run_gaql: %s", e)
+    logger.error("FAILED to load new read tools: %s", e)
 
+# 15 write tools
 try:
-    from tools import keyword_ideas  # noqa: F401
-    logger.info("Loaded: keyword_ideas")
+    from tools import update_budget, set_campaign_status  # noqa: F401
+    from tools import set_adgroup_status, add_negatives  # noqa: F401
+    from tools import remove_negatives, set_keyword_status  # noqa: F401
+    from tools import update_keyword_bid, create_campaign  # noqa: F401
+    from tools import create_adgroup, add_keywords  # noqa: F401
+    from tools import create_rsa, set_ad_status  # noqa: F401
+    from tools import set_bid_adjustments, create_sitelinks  # noqa: F401
+    from tools import set_audience_targeting  # noqa: F401
+    logger.info("Loaded: 15 write tools")
 except Exception as e:
-    logger.error("FAILED to load keyword_ideas: %s", e)
+    logger.error("FAILED to load write tools: %s", e)
 
 # Diagnostic: list all registered tools
 tool_names = [t.name for t in mcp._tool_manager.list_tools()]

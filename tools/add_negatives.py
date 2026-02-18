@@ -1,6 +1,7 @@
 """W4: Add negative keywords to campaign or ad group level."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver, run_query
 from tools.validation import (
@@ -24,12 +25,6 @@ from tools.name_resolver import resolve_campaign, resolve_adgroup
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -112,20 +107,18 @@ def add_negatives(
 
     # Execute
     try:
-        ads_client = _get_ads_client()
-
         if adgroup_id:
             # Ad group level negatives
-            svc = ads_client.get_service("AdGroupCriterionService")
+            svc = utils.get_googleads_service("AdGroupCriterionService")
             operations = []
             for kw in kw_list:
-                op = ads_client.get_type("AdGroupCriterionOperation")
+                op = utils.get_googleads_type("AdGroupCriterionOperation")
                 criterion = op.create
                 criterion.ad_group = svc.ad_group_path(customer_id, adgroup_id)
                 criterion.negative = True
                 criterion.keyword.text = kw
                 criterion.keyword.match_type = (
-                    ads_client.enums.KeywordMatchTypeEnum.KeywordMatchType[
+                    utils._googleads_client.enums.KeywordMatchTypeEnum.KeywordMatchType[
                         match_type.upper()
                     ]
                 )
@@ -135,16 +128,16 @@ def add_negatives(
             )
         else:
             # Campaign level negatives
-            svc = ads_client.get_service("CampaignCriterionService")
+            svc = utils.get_googleads_service("CampaignCriterionService")
             operations = []
             for kw in kw_list:
-                op = ads_client.get_type("CampaignCriterionOperation")
+                op = utils.get_googleads_type("CampaignCriterionOperation")
                 criterion = op.create
                 criterion.campaign = svc.campaign_path(customer_id, campaign_id)
                 criterion.negative = True
                 criterion.keyword.text = kw
                 criterion.keyword.match_type = (
-                    ads_client.enums.KeywordMatchTypeEnum.KeywordMatchType[
+                    utils._googleads_client.enums.KeywordMatchTypeEnum.KeywordMatchType[
                         match_type.upper()
                     ]
                 )

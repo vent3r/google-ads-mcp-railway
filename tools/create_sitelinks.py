@@ -2,6 +2,7 @@
 
 import logging
 import json
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_url, validate_string_length
@@ -12,11 +13,6 @@ from tools.name_resolver import resolve_campaign
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -77,13 +73,12 @@ def create_sitelinks(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        asset_svc = ads_client.get_service("AssetService")
-        campaign_asset_svc = ads_client.get_service("CampaignAssetService")
+        asset_svc = utils.get_googleads_service("AssetService")
+        campaign_asset_svc = utils.get_googleads_service("CampaignAssetService")
 
         asset_ids = []
         for sl in sitelinks_list:
-            asset_op = ads_client.get_type("AssetOperation")
+            asset_op = utils.get_googleads_type("AssetOperation")
             sitelink = asset_op.create.sitelink_asset
             sitelink.link_text = sl.get("text", "")
             sitelink.final_urls.append(sl.get("final_url", ""))
@@ -92,15 +87,15 @@ def create_sitelinks(
             if sl.get("description2"):
                 sitelink.description2 = sl.get("description2")
 
-            asset_response = asset_svc.create_assets(customer_id=customer_id, operations=[asset_op])
+            asset_response = asset_svc.mutate_assets(customer_id=customer_id, operations=[asset_op])
             asset_ids.append(asset_response.results[0].resource_name)
 
         ca_ops = []
         for asset_name in asset_ids:
-            ca_op = ads_client.get_type("CampaignAssetOperation")
+            ca_op = utils.get_googleads_type("CampaignAssetOperation")
             ca_op.create.asset = asset_name
             ca_op.create.campaign = campaign_asset_svc.campaign_path(customer_id, campaign_id)
-            ca_op.create.field_type = ads_client.enums.AssetFieldTypeEnum.AssetFieldType.SITELINK
+            ca_op.create.field_type = utils._googleads_client.enums.AssetFieldTypeEnum.AssetFieldType.SITELINK
             ca_ops.append(ca_op)
 
         ca_response = campaign_asset_svc.mutate_campaign_assets(

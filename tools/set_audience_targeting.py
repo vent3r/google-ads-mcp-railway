@@ -1,6 +1,7 @@
 """W15: Set audience targeting with bid adjustments."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_numeric_range
@@ -11,11 +12,6 @@ from tools.name_resolver import resolve_campaign
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -76,12 +72,11 @@ def set_audience_targeting(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("CampaignCriterionService")
+        svc = utils.get_googleads_service("CampaignCriterionService")
         operations = []
 
         for aud_id in audience_list:
-            op = ads_client.get_type("CampaignCriterionOperation")
+            op = utils.get_googleads_type("CampaignCriterionOperation")
             op.create.campaign = svc.campaign_path(customer_id, campaign_id)
             op.create.user_list.user_list = f"customers/{customer_id}/userLists/{aud_id}"
             if bid_modifier != 0:

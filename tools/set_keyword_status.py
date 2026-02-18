@@ -1,6 +1,7 @@
 """W6: Enable or pause a keyword."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver, run_query
 from tools.validation import validate_mode, validate_enum
@@ -21,11 +22,6 @@ from google.protobuf import field_mask_pb2
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -102,13 +98,12 @@ def set_keyword_status(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("AdGroupCriterionService")
-        op = ads_client.get_type("AdGroupCriterionOperation")
+        svc = utils.get_googleads_service("AdGroupCriterionService")
+        op = utils.get_googleads_type("AdGroupCriterionOperation")
         op.update.resource_name = svc.ad_group_criterion_path(
             customer_id, adgroup_id, criterion_id
         )
-        op.update.status = ads_client.enums.AdGroupCriterionStatusEnum.AdGroupCriterionStatus[
+        op.update.status = utils._googleads_client.enums.AdGroupCriterionStatusEnum.AdGroupCriterionStatus[
             status.upper()
         ]
         op.update_mask = field_mask_pb2.FieldMask(paths=["status"])

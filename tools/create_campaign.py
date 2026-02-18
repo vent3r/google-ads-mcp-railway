@@ -1,6 +1,7 @@
 """W8: Create a new campaign."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_budget_amount, validate_enum, euros_to_micros
@@ -10,11 +11,6 @@ from tools.audit import get_audit_logger
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -82,25 +78,23 @@ def create_campaign(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-
         # Step 1: Create budget
-        budget_svc = ads_client.get_service("CampaignBudgetService")
-        budget_op = ads_client.get_type("CampaignBudgetOperation")
+        budget_svc = utils.get_googleads_service("CampaignBudgetService")
+        budget_op = utils.get_googleads_type("CampaignBudgetOperation")
         budget_op.create.name = f"{name} Budget"
         budget_op.create.amount_micros = euros_to_micros(budget_eur)
         budget_response = budget_svc.mutate_campaign_budgets(customer_id=customer_id, operations=[budget_op])
         budget_id = budget_response.results[0].resource_name.split("/")[-1]
 
         # Step 2: Create campaign
-        campaign_svc = ads_client.get_service("CampaignService")
-        campaign_op = ads_client.get_type("CampaignOperation")
+        campaign_svc = utils.get_googleads_service("CampaignService")
+        campaign_op = utils.get_googleads_type("CampaignOperation")
         campaign = campaign_op.create
         campaign.name = name
         campaign.campaign_budget = campaign_svc.campaign_budget_path(customer_id, budget_id)
-        campaign.status = ads_client.enums.CampaignStatusEnum.CampaignStatus.PAUSED
+        campaign.status = utils._googleads_client.enums.CampaignStatusEnum.CampaignStatus.PAUSED
         campaign.advertising_channel_type = (
-            ads_client.enums.AdvertisingChannelTypeEnum.AdvertisingChannelType[campaign_type]
+            utils._googleads_client.enums.AdvertisingChannelTypeEnum.AdvertisingChannelType[campaign_type]
         )
 
         # Bidding strategy

@@ -1,6 +1,7 @@
 """W12: Enable or pause an ad."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import validate_mode, validate_enum
@@ -12,11 +13,6 @@ from google.protobuf import field_mask_pb2
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -68,11 +64,10 @@ def set_ad_status(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("AdGroupAdService")
-        op = ads_client.get_type("AdGroupAdOperation")
+        svc = utils.get_googleads_service("AdGroupAdService")
+        op = utils.get_googleads_type("AdGroupAdOperation")
         op.update.resource_name = svc.ad_group_ad_path(customer_id, adgroup_id, ad_id)
-        op.update.status = ads_client.enums.AdGroupAdStatusEnum.AdGroupAdStatus[status.upper()]
+        op.update.status = utils._googleads_client.enums.AdGroupAdStatusEnum.AdGroupAdStatus[status.upper()]
         op.update_mask = field_mask_pb2.FieldMask(paths=["status"])
         svc.mutate_ad_group_ads(customer_id=customer_id, operations=[op])
 

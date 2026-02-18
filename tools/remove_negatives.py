@@ -1,6 +1,7 @@
 """W5: Remove negative keywords from campaign or ad group level."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver, run_query
 from tools.validation import validate_mode
@@ -20,12 +21,6 @@ from tools.name_resolver import resolve_campaign, resolve_adgroup
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -110,14 +105,12 @@ def remove_negatives(
 
     # Execute
     try:
-        ads_client = _get_ads_client()
-
         if adgroup_id:
             # Ad group level
-            svc = ads_client.get_service("AdGroupCriterionService")
+            svc = utils.get_googleads_service("AdGroupCriterionService")
             operations = []
             for id_str in id_list:
-                op = ads_client.get_type("AdGroupCriterionOperation")
+                op = utils.get_googleads_type("AdGroupCriterionOperation")
                 resource_name = svc.ad_group_criterion_path(
                     customer_id, adgroup_id, id_str
                 )
@@ -128,10 +121,10 @@ def remove_negatives(
             )
         else:
             # Campaign level
-            svc = ads_client.get_service("CampaignCriterionService")
+            svc = utils.get_googleads_service("CampaignCriterionService")
             operations = []
             for id_str in id_list:
-                op = ads_client.get_type("CampaignCriterionOperation")
+                op = utils.get_googleads_type("CampaignCriterionOperation")
                 resource_name = svc.campaign_criterion_path(customer_id, campaign_id, id_str)
                 op.remove = resource_name
                 operations.append(op)

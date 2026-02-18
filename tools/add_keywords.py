@@ -1,6 +1,7 @@
 """W10: Add keywords to an ad group."""
 
 import logging
+import ads_mcp.utils as utils
 from ads_mcp.coordinator import mcp
 from tools.helpers import ClientResolver
 from tools.validation import (
@@ -26,11 +27,6 @@ from tools.name_resolver import resolve_campaign, resolve_adgroup
 from google.ads.googleads.errors import GoogleAdsException
 
 logger = logging.getLogger(__name__)
-
-
-def _get_ads_client():
-    from ads_mcp.coordinator import get_google_ads_client
-    return get_google_ads_client()
 
 
 @mcp.tool()
@@ -96,17 +92,16 @@ def add_keywords(
         return format_preview_for_llm(preview)
 
     try:
-        ads_client = _get_ads_client()
-        svc = ads_client.get_service("AdGroupCriterionService")
+        svc = utils.get_googleads_service("AdGroupCriterionService")
         operations = []
 
         for kw in kw_list:
-            op = ads_client.get_type("AdGroupCriterionOperation")
+            op = utils.get_googleads_type("AdGroupCriterionOperation")
             criterion = op.create
             criterion.ad_group = svc.ad_group_path(customer_id, adgroup_id)
             criterion.negative = False
             criterion.keyword.text = kw
-            criterion.keyword.match_type = ads_client.enums.KeywordMatchTypeEnum.KeywordMatchType[match_type.upper()]
+            criterion.keyword.match_type = utils._googleads_client.enums.KeywordMatchTypeEnum.KeywordMatchType[match_type.upper()]
             if bid_eur > 0:
                 criterion.cpc_bid_micros = euros_to_micros(bid_eur)
             operations.append(op)
