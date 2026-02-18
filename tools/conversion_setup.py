@@ -30,6 +30,17 @@ def conversion_setup(
     attribution model, lookback window, and whether it's included in the
     'Conversions' column.
 
+    USE THIS TOOL WHEN:
+    - User asks about conversion tracking configuration
+    - "conversioni configurate", "setup tracking", "attribution"
+    - Diagnosing why conversions seem wrong or missing
+
+    DO NOT USE WHEN:
+    - Conversion performance data → use campaign_analysis
+    - Conversion volume trends → use campaign_analysis with sort_by=conversions
+
+    OUTPUT: Table with conversion actions and their settings.
+
     Args:
         client: Account name or customer ID.
         status_filter: ENABLED, HIDDEN, REMOVED, or ALL (default ALL).

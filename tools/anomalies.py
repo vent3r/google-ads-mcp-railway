@@ -34,6 +34,17 @@ def anomaly_detection(
 
     Uses standard deviation analysis to find spikes and drops.
 
+    USE THIS TOOL WHEN:
+    - User asks about problems, anomalies, unusual activity
+    - "anomalie", "problemi", "qualcosa di strano", "spike", "crollo"
+    - Investigating sudden performance changes
+
+    DO NOT USE WHEN:
+    - Standard performance report → use campaign_analysis
+    - Recent account changes → use change_history
+
+    OUTPUT: List of anomalous days with metric value, mean, and deviation.
+
     Args:
         client: Account name or customer ID.
         days: Number of days to analyze (default 30).

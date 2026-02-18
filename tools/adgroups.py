@@ -52,6 +52,18 @@ def adgroup_analysis(
     Aggregates per-day rows into one row per ad group, computes derived
     metrics, applies universal filters and sorts.
 
+    USE THIS TOOL WHEN:
+    - User asks about ad group performance within a campaign
+    - "quali ad group vanno meglio", "performance per gruppo"
+    - Drill-down after campaign_analysis shows issues
+
+    DO NOT USE WHEN:
+    - Campaign-level overview → use campaign_analysis
+    - Keyword-level data → use keyword_analysis
+    - Search terms → use search_term_analysis
+
+    OUTPUT: Markdown table with ad groups sorted by spend.
+
     Args:
         client: Account name or customer ID.
         date_from: Start date YYYY-MM-DD.
@@ -59,7 +71,7 @@ def adgroup_analysis(
         campaign: Campaign name or ID to filter (optional).
         contains: Comma-separated — keep ad groups whose name contains ANY of these.
         excludes: Comma-separated — remove ad groups whose name contains ANY of these.
-        status: Filter by status: ENABLED, PAUSED, or empty for all.
+        status: ENABLED, PAUSED, or empty for all.
         min_clicks: Minimum clicks (default 0).
         min_spend: Minimum spend € (default 0).
         min_conversions: Minimum conversions (default 0).

@@ -8,9 +8,15 @@ from tools.helpers import run_query, ResultFormatter
 
 @mcp.tool()
 def list_clients() -> str:
-    """List all Google Ads client accounts under the MCC.
+    """List all Google Ads client accounts accessible via MCC.
 
-    Returns account name, customer ID, and status. No parameters needed.
+    USE THIS TOOL FIRST when:
+    - You need to find an account name or customer ID
+    - The user mentions an account you haven't seen in this conversation
+    - The user asks "quali clienti", "lista account", "mostra account"
+
+    OUTPUT: Table with account name, customer ID, status.
+    No date parameters needed.
     """
     mcc_id = os.environ.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "").replace("-", "")
     if not mcc_id:

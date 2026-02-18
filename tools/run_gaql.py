@@ -29,15 +29,28 @@ def run_gaql(
 ) -> str:
     """Execute a raw GAQL query on a client account. Read-only.
 
-    Use this for queries not covered by other tools: landing pages,
+    Use this ONLY for queries not covered by other tools: landing pages,
     asset performance, geographic reports, device segments, audience data,
     ad disapprovals, extension performance, etc.
 
+    USE THIS TOOL WHEN:
+    - No other tool covers the specific data needed
+    - User provides a specific GAQL query
+    - Advanced users requesting custom reports
+
+    DO NOT USE WHEN:
+    - Any standard analysis is available via dedicated tools
+    - Campaign performance → campaign_analysis
+    - Keywords → keyword_analysis
+    - Search terms → search_term_analysis
+    - Any other dedicated tool exists for the request
+
+    OUTPUT: Raw table with query results.
+
     Args:
         client: Account name or customer ID.
-        query: Complete GAQL query string. Must be a SELECT query.
-        limit: Max rows to display (default 50). Does NOT add LIMIT to query;
-            use LIMIT in the query itself if needed.
+        query: Complete GAQL SELECT query string. Must be read-only.
+        limit: Max rows to display (default 50).
     """
     # Safety check
     query_upper = query.upper().strip()

@@ -47,13 +47,25 @@ def keyword_ideas(
     Uses Google Ads Keyword Planner (requires Standard Access).
     Provide seed keywords and/or a page URL to discover new keyword opportunities.
 
+    USE THIS TOOL WHEN:
+    - User asks for new keyword suggestions or ideas
+    - "idee keyword", "nuove keyword", "keyword planner"
+    - Expanding keyword coverage
+
+    DO NOT USE WHEN:
+    - Existing keyword performance → use keyword_analysis
+    - Search terms already triggering ads → use search_term_analysis
+    - Converting search terms to add → use keyword_opportunities
+
+    OUTPUT: Table with keyword ideas, search volume, competition level.
+
     Args:
         client: Account name or customer ID.
         keywords: Comma-separated seed keywords (e.g. "spedizioni, corriere espresso").
         page_url: Optional URL to seed ideas from (e.g. "https://www.spedire.com").
-        country: Country code for targeting — IT, US, UK, DE, FR, ES (default IT).
+        country: Country code — IT, US, UK, DE, FR, ES (default IT).
         language: Language code — it, en, de, fr, es (default it).
-        max_results: Maximum keyword ideas to return (default 50, max 200).
+        max_results: Maximum ideas to return (default 50, max 200).
         include_adult: Include adult keywords (default false).
     """
     customer_id = ClientResolver.resolve(client)

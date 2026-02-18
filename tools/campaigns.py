@@ -130,18 +130,32 @@ def campaign_analysis(
     Shows spend, clicks, conversions, CPA, ROAS, impression share, bidding
     strategy, and delta vs previous period. Includes proactive benchmark alerts.
 
+    USE THIS TOOL WHEN:
+    - User asks about campaign performance, spend, ROAS, CPA
+    - "come stanno andando le campagne", "quanto abbiamo speso"
+    - General account health check
+    - Campaign comparison between periods
+
+    DO NOT USE WHEN:
+    - Individual keywords → use keyword_analysis
+    - Search terms / query di ricerca → use search_term_analysis
+    - Ad group level data → use adgroup_analysis
+    - Single campaign deep dive → use campaign_overview
+
+    OUTPUT: Markdown table sorted by spend. Currency EUR. Dates YYYY-MM-DD.
+
     Args:
         client: Account name or customer ID (e.g. "Spedire.com" or "1234567890").
-        date_from: Start date in YYYY-MM-DD format.
-        date_to: End date in YYYY-MM-DD format.
-        status_filter: ENABLED, PAUSED, or ALL (default ENABLED).
+        date_from: Start date YYYY-MM-DD.
+        date_to: End date YYYY-MM-DD.
+        status_filter: ENABLED (default), PAUSED, or ALL.
         contains: Comma-separated — keep campaigns whose name contains ANY of these words.
         excludes: Comma-separated — remove campaigns whose name contains ANY of these words.
         campaign_type: Filter by channel type: SEARCH, SHOPPING, DISPLAY, PERFORMANCE_MAX, or empty for all.
         min_clicks: Minimum clicks (default 0).
         min_spend: Minimum spend in € (default 0).
         min_conversions: Minimum conversions (default 0).
-        max_cpa: Maximum CPA in € — 0 = no limit (default 0).
+        max_cpa: Maximum CPA € — 0 = no limit (default 0).
         min_roas: Minimum ROAS — 0 = no limit (default 0).
         zero_conversions: If true, only show campaigns with 0 conversions (default false).
         sort_by: spend, clicks, conversions, cpa, roas, ctr, search_is, budget_lost (default spend).
