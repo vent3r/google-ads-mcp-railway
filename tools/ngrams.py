@@ -60,6 +60,17 @@ def search_term_ngrams(
     Step 1: aggregate per-day rows by search term.
     Step 2: extract n-grams and aggregate metrics across terms.
 
+    USE THIS TOOL WHEN:
+    - User wants to find word patterns in search terms
+    - "pattern", "parole frequenti", "n-gram", "temi ricorrenti"
+    - Finding categories of wasteful search terms
+
+    DO NOT USE WHEN:
+    - Individual search terms → use search_term_analysis
+    - Keyword performance → use keyword_analysis
+
+    OUTPUT: Markdown table with n-grams sorted by spend.
+
     Args:
         client: Account name or customer ID.
         date_from: Start date YYYY-MM-DD.
@@ -76,7 +87,7 @@ def search_term_ngrams(
         zero_conversions: Only show n-grams with 0 conversions (default false).
         sort_by: spend, clicks, conversions, cpa, roas (default spend).
         limit: Max rows (default 50).
-        output_mode: "summary" (top 10 + totals) or "full" (all rows). Default summary.
+        output_mode: "summary" or "full". Default summary.
     """
     customer_id = ClientResolver.resolve(client)
     client_name = ClientResolver.resolve_name(customer_id)

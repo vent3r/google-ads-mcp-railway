@@ -33,11 +33,21 @@ def change_history(
     Essential for understanding WHY metrics changed. Use this when investigating
     performance shifts.
 
+    USE THIS TOOL WHEN:
+    - User asks about recent changes or modifications
+    - "modifiche recenti", "chi ha cambiato", "cosa è cambiato"
+    - After detecting anomalies, to find root cause
+
+    DO NOT USE WHEN:
+    - Performance data → use campaign_analysis
+    - Anomaly detection → use anomaly_detection first, then this
+
+    OUTPUT: List of changes with date, type, entity, old/new values.
+
     Args:
         client: Account name or customer ID.
         days: How many days back to look (default 7, max 30).
-        resource_type: Filter by type — CAMPAIGN, AD_GROUP, AD, AD_GROUP_CRITERION,
-            CAMPAIGN_BUDGET, or ALL (default ALL).
+        resource_type: CAMPAIGN, AD_GROUP, AD, AD_GROUP_CRITERION, CAMPAIGN_BUDGET, or ALL (default ALL).
         limit: Max rows (default 50).
     """
     customer_id = ClientResolver.resolve(client)

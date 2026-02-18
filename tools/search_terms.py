@@ -54,18 +54,28 @@ def search_term_analysis(
     Default: one row per unique search term (campaigns/adgroups shown as count).
     Detail mode: one row per search term × campaign × ad group.
 
+    USE THIS TOOL WHEN:
+    - User asks about actual user search queries
+    - "termini di ricerca", "search terms", "cosa cercano gli utenti"
+    - Investigating irrelevant traffic or finding opportunities
+    - Before adding negative keywords
+
+    DO NOT USE WHEN:
+    - Managed keywords → use keyword_analysis
+    - N-gram pattern analysis → use search_term_ngrams
+    - Auto-suggest negatives → use suggest_negatives
+
+    OUTPUT: Markdown table with search terms, spend, clicks, conversions.
+
     Args:
         client: Account name or customer ID.
         date_from: Start date YYYY-MM-DD.
         date_to: End date YYYY-MM-DD.
         campaign: Campaign name or ID (optional).
-        contains: Comma-separated words — keep only terms containing ANY of these (e.g. "pacco,pacchi"). Case-insensitive.
-        excludes: Comma-separated words — remove terms containing ANY of these (e.g. "dhl,ups"). Case-insensitive.
+        contains: Comma-separated — keep only terms containing ANY of these (case-insensitive).
+        excludes: Comma-separated — remove terms containing ANY of these (case-insensitive).
         min_clicks: Min clicks to include (default 1).
         min_spend: Minimum spend € (default 0).
-        min_conversions: Minimum conversions (default 0).
-        max_cpa: Max CPA € — 0 = no limit (default 0).
-        min_roas: Minimum ROAS — 0 = no limit (default 0).
         zero_conversions: If true, only show terms with 0 conversions (default false).
         sort_by: spend, clicks, impressions, cpa, ctr, roas (default spend).
         limit: Max rows (default 50).

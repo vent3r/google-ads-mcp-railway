@@ -55,6 +55,18 @@ def keyword_analysis(
     Aggregates per-day rows, adds quality score breakdown (QS, creative,
     landing page, expected CTR), applies universal filters and sorts.
 
+    USE THIS TOOL WHEN:
+    - User asks about keyword performance, bids, quality score
+    - "parole chiave", "keyword", "QS", "quality score"
+    - Investigating high-CPA or low-CTR keywords
+
+    DO NOT USE WHEN:
+    - Search terms (user queries) → use search_term_analysis
+    - Keyword ideas/suggestions → use keyword_ideas
+    - Negative keywords → use suggest_negatives
+
+    OUTPUT: Markdown table with keywords, QS components, performance metrics.
+
     Args:
         client: Account name or customer ID.
         date_from: Start date YYYY-MM-DD.
@@ -63,7 +75,7 @@ def keyword_analysis(
         match_type: EXACT, PHRASE, BROAD, or ALL (default ALL).
         contains: Comma-separated — keep keywords whose text contains ANY of these.
         excludes: Comma-separated — remove keywords whose text contains ANY of these.
-        status: Filter by status: ENABLED, PAUSED, or empty for all.
+        status: ENABLED, PAUSED, or empty for all.
         min_clicks: Minimum clicks (default 0).
         min_spend: Minimum spend € (default 0).
         min_conversions: Minimum conversions (default 0).
