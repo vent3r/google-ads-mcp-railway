@@ -103,7 +103,8 @@ def pmax_search_categories(
             "metrics.impressions, metrics.clicks, metrics.cost_micros, "
             "metrics.conversions, metrics.conversions_value "
             f"FROM campaign_search_term_insight "
-            f"WHERE campaign.id = {camp['id']} AND {date_cond}"
+            f"WHERE campaign_search_term_insight.campaign_id = '{camp['id']}' "
+            f"AND {date_cond}"
         )
         try:
             rows = run_query(customer_id, q)
