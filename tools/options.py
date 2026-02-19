@@ -134,6 +134,19 @@ def numeric_match(
 # 3. COMBINED FILTER (single entry point)
 # ===========================================================================
 
+# Google Ads AdvertisingChannelType enum: numeric value → lowercase name.
+# The API sometimes returns the numeric id instead of the string name;
+# this map lets apply_filters() match either representation.
+_CHANNEL_TYPE_NAMES = {
+    "0": "unspecified", "1": "unknown",
+    "2": "search", "3": "display", "4": "shopping",
+    "5": "hotel", "6": "video", "7": "multi_channel",
+    "8": "local", "9": "smart", "10": "performance_max",
+    "11": "local_services", "12": "discovery", "13": "travel",
+    "14": "demand_gen",
+}
+
+
 def apply_filters(
     rows: List[Dict[str, Any]],
     text_field: str = "",
@@ -193,6 +206,8 @@ def apply_filters(
             row_type = str(
                 row.get("campaign.advertising_channel_type", "")
             ).lower()
+            # Normalize numeric enum value → string name (e.g. "10" → "performance_max")
+            row_type = _CHANNEL_TYPE_NAMES.get(row_type, row_type)
             if ctype_lower not in row_type:
                 continue
 
