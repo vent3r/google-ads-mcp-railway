@@ -1,7 +1,8 @@
-"""T3: Performance Max search category insights.
+"""PMax search terms with full metrics (cost, conversions, ROAS).
 
-campaign_search_term_insight requires filtering by a single campaign ID,
-so this tool loops over all PMax campaigns.
+Uses campaign_search_term_view which provides individual search terms
+at campaign level for Performance Max campaigns — single GAQL query,
+no per-campaign iteration needed.
 """
 
 import logging
@@ -29,19 +30,15 @@ def pmax_search_categories(
     sort_by: str = "spend",
     limit: int = 50,
 ) -> str:
-    """Show search term insights for Performance Max campaigns (campaign_search_term_insight).
+    """Show PMax search terms with full metrics including cost.
 
-    This is the ONLY way to see what users search in PMax campaigns. Google does NOT
-    expose PMax search terms through the normal search_term_view — they use a separate
-    resource called campaign_search_term_insight that returns aggregate CATEGORIES.
-
-    IMPORTANT: search_term_analysis DOES NOT WORK for Performance Max campaigns.
-    You MUST use this tool instead for any PMax search query analysis.
+    Uses campaign_search_term_view which provides individual search terms
+    with cost data for Performance Max campaigns.
 
     USE THIS TOOL WHEN:
     - User asks about PMax search terms, search queries, what triggers PMax ads
     - "search terms PMax", "termini di ricerca PMax", "cosa cercano gli utenti in PMax"
-    - "campaign_search_term_insight", "search category insights performance max"
+    - "campaign_search_term_view", "pmax search terms", "search terms performance max"
     - User asks for search terms and the campaign is a Performance Max campaign
     - Any question about search behavior, query matching, or user intent in PMax
 
@@ -49,7 +46,7 @@ def pmax_search_categories(
     - Search/Shopping campaign search terms -> use search_term_analysis
     - N-gram analysis on Search campaigns -> use ngram_analysis
 
-    OUTPUT: Markdown table with search categories and metrics per PMax campaign.
+    OUTPUT: Markdown table with individual search terms, cost, clicks, conversions per PMax campaign.
 
     Args:
         client: Account name or customer ID.
@@ -63,73 +60,51 @@ def pmax_search_categories(
     client_name = ClientResolver.resolve_name(customer_id)
     date_cond = DateHelper.date_condition(date_from, date_to)
 
-    # Determine which PMax campaigns to query
+    conditions = [
+        "campaign.advertising_channel_type = 'PERFORMANCE_MAX'",
+        date_cond,
+    ]
     if campaign:
         campaign_id = CampaignResolver.resolve(customer_id, campaign)
-        pmax_campaigns = [{"id": campaign_id, "name": campaign}]
-    else:
-        list_q = (
-            "SELECT campaign.id, campaign.name "
-            "FROM campaign "
-            "WHERE campaign.advertising_channel_type = 'PERFORMANCE_MAX' "
-            "AND campaign.status = 'ENABLED'"
-        )
-        camp_rows = run_query(customer_id, list_q)
-        pmax_campaigns = [
-            {"id": str(r.get("campaign.id", "")), "name": r.get("campaign.name", "")}
-            for r in camp_rows
-        ]
+        conditions.append(f"campaign.id = {campaign_id}")
 
-    total_campaigns = len(pmax_campaigns)
-    if total_campaigns > 50:
-        logger.warning("Unusual: %d PMax campaigns for customer %s", total_campaigns, customer_id)
+    query = (
+        "SELECT campaign.name, campaign_search_term_view.search_term, "
+        "metrics.clicks, metrics.impressions, metrics.cost_micros, "
+        "metrics.conversions, metrics.conversions_value "
+        f"FROM campaign_search_term_view "
+        f"WHERE {' AND '.join(conditions)}"
+    )
 
-    if not pmax_campaigns:
-        return "No enabled Performance Max campaigns found."
+    rows = run_query(customer_id, query)
 
-    # Query each PMax campaign's search term insights
-    by_category = defaultdict(lambda: {
-        "campaign.name": "", "category_label": "",
+    # Aggregate by (campaign, search_term) — rows are split by date segment
+    agg = defaultdict(lambda: {
+        "campaign.name": "", "search_term": "",
         "metrics.impressions": 0, "metrics.clicks": 0,
         "metrics.cost_micros": 0, "metrics.conversions": 0.0,
         "metrics.conversions_value": 0.0,
     })
 
-    campaigns_queried = 0
-    for camp in pmax_campaigns:
-        q = (
-            "SELECT "
-            "campaign_search_term_insight.category_label, "
-            "metrics.impressions, metrics.clicks, metrics.cost_micros, "
-            "metrics.conversions, metrics.conversions_value "
-            f"FROM campaign_search_term_insight "
-            f"WHERE campaign_search_term_insight.campaign_id = '{camp['id']}' "
-            f"AND {date_cond}"
-        )
-        try:
-            rows = run_query(customer_id, q)
-            campaigns_queried += 1
-        except ValueError as e:
-            logger.warning("pmax_search_categories: campaign %s (%s) failed: %s",
-                           camp["name"], camp["id"], e)
-            continue
-
-        for row in rows:
-            label = row.get("campaign_search_term_insight.category_label", "")
-            key = (camp["id"], label)
-            a = by_category[key]
-            a["campaign.name"] = camp["name"]
-            a["category_label"] = label
-            a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
-            a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
-            a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
-            a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
-            a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
+    for row in rows:
+        term = row.get("campaign_search_term_view.search_term", "")
+        camp_name = row.get("campaign.name", "")
+        key = (camp_name, term)
+        a = agg[key]
+        a["campaign.name"] = camp_name
+        a["search_term"] = term
+        a["metrics.impressions"] += int(row.get("metrics.impressions", 0) or 0)
+        a["metrics.clicks"] += int(row.get("metrics.clicks", 0) or 0)
+        a["metrics.cost_micros"] += float(row.get("metrics.cost_micros", 0) or 0)
+        a["metrics.conversions"] += float(row.get("metrics.conversions", 0) or 0)
+        a["metrics.conversions_value"] += float(row.get("metrics.conversions_value", 0) or 0)
 
     results = []
-    for a in by_category.values():
+    for a in agg.values():
         compute_derived_metrics(a)
         results.append(a)
+
+    total_terms = len(results)
 
     rows_out, total, truncated, filter_desc, summary = process_rows(
         results, sort_by=sort_by, limit=limit,
@@ -137,22 +112,24 @@ def pmax_search_categories(
 
     columns = [
         ("campaign.name", "Campaign"),
-        ("category_label", "Search Category"),
-        ("_spend", "Spend \u20ac"),
+        ("search_term", "Search Term"),
+        ("_spend", "Cost \u20ac"),
         ("metrics.clicks", "Clicks"),
         ("metrics.impressions", "Impr"),
         ("_ctr", "CTR%"),
+        ("_cpc", "Avg CPC \u20ac"),
         ("metrics.conversions", "Conv"),
+        ("metrics.conversions_value", "Value \u20ac"),
         ("_cpa", "CPA \u20ac"),
         ("_roas", "ROAS"),
     ]
 
     header = build_header(
-        title="PMax Search Category Insights",
+        title="PMax Search Terms",
         client_name=client_name,
         date_from=date_from,
         date_to=date_to,
-        extra=f"{campaigns_queried} PMax campaigns queried \u00b7 {total} categories",
+        extra=f"{total_terms:,} search terms",
     )
 
     return format_output(
