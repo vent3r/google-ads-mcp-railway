@@ -5,7 +5,7 @@ accept human-readable names from the LLM.
 """
 
 import logging
-from tools.helpers import ClientResolver, run_query
+from tools.helpers import CampaignResolver, ClientResolver, run_query
 
 logger = logging.getLogger(__name__)
 
@@ -24,39 +24,8 @@ def resolve_campaign(client: str, campaign: str) -> tuple:
         ValueError: if not found or ambiguous
     """
     customer_id = ClientResolver.resolve(client)
-
-    # If already numeric ID, verify existence
-    if campaign.isdigit():
-        q = (
-            f"SELECT campaign.id, campaign.name "
-            f"FROM campaign "
-            f"WHERE campaign.id = {campaign} "
-            f"LIMIT 1"
-        )
-        rows = run_query(customer_id, q)
-        if not rows:
-            raise ValueError(f"Campaign ID {campaign} not found in account {client}.")
-        return customer_id, campaign
-
-    # Search by name (case-insensitive via GAQL)
-    q = (
-        f"SELECT campaign.id, campaign.name "
-        f"FROM campaign "
-        f"WHERE campaign.name = '{campaign}' "
-        f"AND campaign.status != 'REMOVED'"
-    )
-    rows = run_query(customer_id, q)
-
-    if len(rows) == 0:
-        raise ValueError(f"Campaign '{campaign}' not found in account {client}.")
-    if len(rows) > 1:
-        names = [f"- {r.get('campaign.name')} (ID: {r.get('campaign.id')})" for r in rows]
-        raise ValueError(
-            f"Multiple campaigns match '{campaign}':\n"
-            + "\n".join(names)
-            + "\nSpecify the campaign ID to disambiguate."
-        )
-    return customer_id, str(rows[0].get("campaign.id"))
+    campaign_id = CampaignResolver.resolve(customer_id, campaign)
+    return customer_id, campaign_id
 
 
 def resolve_adgroup(customer_id: str, campaign_id: str, adgroup: str) -> str:

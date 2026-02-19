@@ -195,6 +195,64 @@ class CampaignResolver:
 
 
 # ---------------------------------------------------------------------------
+# Asset Resolver (for PMax top combinations)
+# ---------------------------------------------------------------------------
+
+class AssetResolver:
+    """Resolves asset resource names to readable content (1h cache)."""
+
+    _cache: Dict[str, Dict[str, Dict[str, str]]] = {}
+    _timestamps: Dict[str, datetime] = {}
+    _lock = threading.Lock()
+    _TTL = timedelta(hours=1)
+
+    @classmethod
+    def resolve(cls, customer_id: str) -> Dict[str, Dict[str, str]]:
+        """Return dict keyed by asset resource_name → {name, text, image_url, video_id}."""
+        customer_id = customer_id.replace("-", "")
+        cls._ensure_loaded(customer_id)
+        with cls._lock:
+            return cls._cache.get(customer_id, {})
+
+    @classmethod
+    def _ensure_loaded(cls, customer_id: str) -> None:
+        with cls._lock:
+            ts = cls._timestamps.get(customer_id)
+            if ts and datetime.now() - ts < cls._TTL:
+                return
+        query = (
+            "SELECT asset.resource_name, asset.name, "
+            "asset.text_asset.text, "
+            "asset.image_asset.full_size.url, "
+            "asset.youtube_video_asset.youtube_video_id "
+            "FROM asset"
+        )
+        rows = run_query(customer_id, query)
+        lookup: Dict[str, Dict[str, str]] = {}
+        for row in rows:
+            rn = row.get("asset.resource_name", "")
+            if not rn:
+                continue
+            text = (
+                row.get("asset.text_asset.text", "")
+                or row.get("asset.image_asset.full_size.url", "")
+                or row.get("asset.youtube_video_asset.youtube_video_id", "")
+                or row.get("asset.name", "")
+                or ""
+            )
+            lookup[rn] = {
+                "name": row.get("asset.name", ""),
+                "text": str(text),
+                "image_url": row.get("asset.image_asset.full_size.url", "") or "",
+                "video_id": row.get("asset.youtube_video_asset.youtube_video_id", "") or "",
+            }
+        with cls._lock:
+            cls._cache[customer_id] = lookup
+            cls._timestamps[customer_id] = datetime.now()
+            logger.info("AssetResolver: %d assets loaded for %s", len(lookup), customer_id)
+
+
+# ---------------------------------------------------------------------------
 # Date Helper
 # ---------------------------------------------------------------------------
 

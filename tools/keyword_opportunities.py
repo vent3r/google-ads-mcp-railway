@@ -3,6 +3,7 @@
 import logging
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
+    CampaignResolver,
     ClientResolver,
     DateHelper,
     compute_derived_metrics,
@@ -45,8 +46,7 @@ def keyword_opportunities(
 
     campaign_clause = ""
     if campaign:
-        from tools.name_resolver import resolve_campaign
-        _, campaign_id = resolve_campaign(client, campaign)
+        campaign_id = CampaignResolver.resolve(customer_id, campaign)
         campaign_clause = f" AND campaign.id = {campaign_id}"
 
     q = (

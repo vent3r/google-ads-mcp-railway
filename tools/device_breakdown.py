@@ -2,7 +2,7 @@
 
 import logging
 from ads_mcp.coordinator import mcp
-from tools.helpers import ClientResolver, DateHelper, compute_derived_metrics, run_query
+from tools.helpers import CampaignResolver, ClientResolver, DateHelper, compute_derived_metrics, run_query
 from tools.options import format_output, build_header, build_footer
 
 logger = logging.getLogger(__name__)
@@ -32,8 +32,7 @@ def device_breakdown(
 
     campaign_clause = ""
     if campaign:
-        from tools.name_resolver import resolve_campaign
-        _, campaign_id = resolve_campaign(client, campaign)
+        campaign_id = CampaignResolver.resolve(customer_id, campaign)
         campaign_clause = f" AND campaign.id = {campaign_id}"
 
     q = (

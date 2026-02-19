@@ -50,6 +50,19 @@ try:
 except Exception as e:
     logger.error("FAILED to load new read tools: %s", e)
 
+# 16 phase-4 read tools
+try:
+    from tools import pmax_asset_groups, pmax_assets, pmax_search_categories  # noqa: F401
+    from tools import pmax_placements, pmax_signals, pmax_top_combinations  # noqa: F401
+    from tools import product_performance, listing_groups  # noqa: F401
+    from tools import audience_performance, demographics  # noqa: F401
+    from tools import placement_performance, ad_schedule_performance  # noqa: F401
+    from tools import recommendations, shared_negatives  # noqa: F401
+    from tools import account_assets, labels  # noqa: F401
+    logger.info("Loaded: 16 phase-4 read tools")
+except Exception as e:
+    logger.error("FAILED to load phase-4 read tools: %s", e)
+
 # 15 write tools
 try:
     from tools import update_budget, set_campaign_status  # noqa: F401
