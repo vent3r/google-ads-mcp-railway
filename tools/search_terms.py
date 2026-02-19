@@ -51,16 +51,23 @@ def search_term_analysis(
 ) -> str:
     """Analyze search terms with server-side aggregation and text filtering.
 
+    Uses search_term_view — works for Search and Shopping campaigns ONLY.
+
+    IMPORTANT: This tool DOES NOT return data for Performance Max (PMax) campaigns.
+    PMax search terms are NOT available in search_term_view.
+    For PMax search insights, use pmax_search_categories instead.
+
     Default: one row per unique search term (campaigns/adgroups shown as count).
     Detail mode: one row per search term × campaign × ad group.
 
     USE THIS TOOL WHEN:
-    - User asks about actual user search queries
+    - User asks about actual user search queries for Search or Shopping campaigns
     - "termini di ricerca", "search terms", "cosa cercano gli utenti"
     - Investigating irrelevant traffic or finding opportunities
     - Before adding negative keywords
 
     DO NOT USE WHEN:
+    - Performance Max search terms → use pmax_search_categories
     - Managed keywords → use keyword_analysis
     - N-gram pattern analysis → use search_term_ngrams
     - Auto-suggest negatives → use suggest_negatives

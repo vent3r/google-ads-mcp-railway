@@ -29,19 +29,25 @@ def pmax_search_categories(
     sort_by: str = "spend",
     limit: int = 50,
 ) -> str:
-    """Show search category insights for Performance Max campaigns.
+    """Show search term insights for Performance Max campaigns (campaign_search_term_insight).
 
-    Returns aggregate search CATEGORIES, not individual search terms. Google does
-    not expose individual search terms for Performance Max campaigns.
+    This is the ONLY way to see what users search in PMax campaigns. Google does NOT
+    expose PMax search terms through the normal search_term_view — they use a separate
+    resource called campaign_search_term_insight that returns aggregate CATEGORIES.
+
+    IMPORTANT: search_term_analysis DOES NOT WORK for Performance Max campaigns.
+    You MUST use this tool instead for any PMax search query analysis.
 
     USE THIS TOOL WHEN:
-    - User asks about PMax search terms, what queries trigger PMax
-    - "search terms PMax", "cosa cercano gli utenti in PMax"
-    - "search category insights performance max"
+    - User asks about PMax search terms, search queries, what triggers PMax ads
+    - "search terms PMax", "termini di ricerca PMax", "cosa cercano gli utenti in PMax"
+    - "campaign_search_term_insight", "search category insights performance max"
+    - User asks for search terms and the campaign is a Performance Max campaign
+    - Any question about search behavior, query matching, or user intent in PMax
 
     DO NOT USE WHEN:
-    - Search/Shopping search terms -> use search_term_analysis
-    - N-gram analysis -> use ngram_analysis
+    - Search/Shopping campaign search terms -> use search_term_analysis
+    - N-gram analysis on Search campaigns -> use ngram_analysis
 
     OUTPUT: Markdown table with search categories and metrics per PMax campaign.
 
