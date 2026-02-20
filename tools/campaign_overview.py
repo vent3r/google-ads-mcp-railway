@@ -8,6 +8,7 @@ from tools.helpers import (
     DateHelper,
     ResultFormatter,
     compute_derived_metrics,
+    resolve_bidding_strategy,
     run_query,
 )
 from tools.validation import micros_to_euros
@@ -52,6 +53,7 @@ def campaign_overview(
     q_info = (
         "SELECT campaign.id, campaign.name, campaign.status, "
         "campaign.advertising_channel_type, campaign.bidding_strategy_type, "
+        "campaign.bidding_strategy, "
         "campaign_budget.amount_micros "
         f"FROM campaign WHERE campaign.id = {campaign_id} LIMIT 1"
     )
@@ -59,6 +61,9 @@ def campaign_overview(
     if not info_rows:
         return f"Campaign {campaign_id} not found."
     info = info_rows[0]
+
+    # Resolve bidding strategy
+    bidding_info = resolve_bidding_strategy(customer_id, info)
 
     # 2. Performance last period
     q_perf = (
@@ -107,7 +112,7 @@ def campaign_overview(
     sections.append("## Settings")
     sections.append(f"- **Status**: {info.get('campaign.status', '')}")
     sections.append(f"- **Type**: {info.get('campaign.advertising_channel_type', '')}")
-    sections.append(f"- **Bidding**: {info.get('campaign.bidding_strategy_type', '')}")
+    sections.append(f"- **Bidding**: {bidding_info['display']}")
     sections.append(f"- **Daily Budget**: \u20ac{budget_eur:,.2f}")
 
     sections.append(f"\n## Performance ({date_from} \u2192 {date_to})")

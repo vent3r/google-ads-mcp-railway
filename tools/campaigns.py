@@ -9,6 +9,7 @@ from collections import defaultdict
 
 from ads_mcp.coordinator import mcp
 from tools.helpers import (
+    BIDDING_STRATEGY_TYPE_MAP,
     ClientResolver,
     DateHelper,
     ResultFormatter,
@@ -32,6 +33,7 @@ _FIELDS = (
     "campaign.name, campaign.id, campaign.status, "
     "campaign.advertising_channel_type, "
     "campaign.bidding_strategy_type, "
+    "campaign.bidding_strategy, "
     "metrics.impressions, metrics.clicks, metrics.cost_micros, "
     "metrics.conversions, metrics.conversions_value, "
     "metrics.search_impression_share, "
@@ -62,6 +64,9 @@ def _fetch_and_aggregate(customer_id: str, date_from: str, date_to: str,
                 ),
                 "campaign.bidding_strategy_type": row.get(
                     "campaign.bidding_strategy_type", ""
+                ),
+                "campaign.bidding_strategy": row.get(
+                    "campaign.bidding_strategy", ""
                 ),
                 "metrics.impressions": 0,
                 "metrics.clicks": 0,
@@ -101,6 +106,22 @@ def _fetch_and_aggregate(customer_id: str, date_from: str, date_to: str,
         vals = a.pop("_is_rank_values")
         a["rank_lost_is"] = round(sum(vals) / len(vals) * 100, 1) if vals else 0.0
         compute_derived_metrics(a)
+
+        # Decode bidding strategy type to human-readable label
+        bst_raw = a.get("campaign.bidding_strategy_type", "")
+        try:
+            bst_int = int(bst_raw)
+            a["bidding_label"] = BIDDING_STRATEGY_TYPE_MAP.get(bst_int, str(bst_raw))
+        except (ValueError, TypeError):
+            a["bidding_label"] = (
+                str(bst_raw).replace("_", " ").title() if bst_raw else ""
+            )
+
+        # Mark portfolio strategies
+        portfolio_rn = a.get("campaign.bidding_strategy", "")
+        if portfolio_rn and "/biddingStrategies/" in str(portfolio_rn):
+            a["bidding_label"] += " (portfolio)"
+
         result.append(a)
 
     return result
