@@ -789,6 +789,7 @@ class COLUMNS:
         ("campaign.name", "Campaign"),
         ("campaign.status", "Status"),
         ("campaign.advertising_channel_type", "Type"),
+        ("bidding_label", "Bidding"),
     ] + CORE_METRICS + [
         ("search_is", "IS%"),
         ("budget_lost_is", "Budget Lost%"),

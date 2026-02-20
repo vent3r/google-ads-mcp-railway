@@ -397,6 +397,97 @@ SUMMABLE_METRICS = {
     "metrics.search_impression_share",
 }
 
+
+# ---------------------------------------------------------------------------
+# Bidding strategy enum mapping
+# ---------------------------------------------------------------------------
+
+# Source: google/ads/googleads/v18/enums/bidding_strategy_type.proto
+BIDDING_STRATEGY_TYPE_MAP = {
+    0: "Unspecified",
+    1: "Unknown",
+    2: "Enhanced CPC",
+    3: "Manual CPC",
+    5: "Page One Promoted",
+    6: "Target CPA",
+    7: "Target Outrank Share",
+    8: "Target ROAS",
+    9: "Target Spend",
+    10: "Maximize Conversions",
+    11: "Maximize Conversion Value",
+    12: "Percent CPC",
+    13: "Manual CPV",
+    14: "Target CPM",
+    15: "Target Impression Share",
+    16: "Commission",
+    19: "Fixed CPM",
+}
+
+
+def resolve_bidding_strategy(customer_id: str, row: dict) -> dict:
+    """Resolve bidding strategy details from a campaign row.
+
+    Returns dict with keys: name, type_label, target_cpa, target_roas,
+    is_portfolio, display.  For portfolio strategies, queries the
+    bidding_strategy resource to get name and target CPA (+1 API call).
+    """
+    result = {
+        "name": "",
+        "type_label": "",
+        "target_cpa": 0.0,
+        "target_roas": 0.0,
+        "is_portfolio": False,
+        "display": "",
+    }
+
+    # Decode enum
+    bst_raw = row.get("campaign.bidding_strategy_type", "")
+    try:
+        bst_int = int(bst_raw)
+        result["type_label"] = BIDDING_STRATEGY_TYPE_MAP.get(bst_int, str(bst_raw))
+    except (ValueError, TypeError):
+        result["type_label"] = (
+            str(bst_raw).replace("_", " ").title() if bst_raw else "Unknown"
+        )
+
+    # Check if portfolio strategy (resource name present)
+    portfolio_rn = row.get("campaign.bidding_strategy", "")
+    if portfolio_rn and "/biddingStrategies/" in str(portfolio_rn):
+        result["is_portfolio"] = True
+        strategy_id = str(portfolio_rn).split("/")[-1]
+
+        try:
+            q = (
+                f"SELECT bidding_strategy.name, bidding_strategy.type, "
+                f"bidding_strategy.target_cpa.target_cpa_micros "
+                f"FROM bidding_strategy "
+                f"WHERE bidding_strategy.id = {strategy_id}"
+            )
+            bs_rows = run_query(customer_id, q)
+            if bs_rows:
+                bs = bs_rows[0]
+                result["name"] = bs.get("bidding_strategy.name", "")
+                target_cpa_micros = int(
+                    bs.get("bidding_strategy.target_cpa.target_cpa_micros", 0) or 0
+                )
+                if target_cpa_micros > 0:
+                    result["target_cpa"] = target_cpa_micros / 1_000_000
+        except Exception as e:
+            logger.warning("resolve_bidding_strategy portfolio query failed: %s", e)
+
+    # Build display string
+    parts = [result["type_label"]]
+    if result["target_cpa"] > 0:
+        parts.append(f"\u20ac{result['target_cpa']:.2f}")
+    if result["target_roas"] > 0:
+        parts.append(f"{result['target_roas']:.0f}%")
+    if result["is_portfolio"] and result["name"]:
+        parts.append(f'(portfolio: "{result["name"]}")')
+    result["display"] = " ".join(parts)
+
+    return result
+
+
 def aggregate_rows(
     rows: List[Dict[str, Any]],
     group_by: List[str],
