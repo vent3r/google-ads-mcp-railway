@@ -77,6 +77,13 @@ try:
 except Exception as e:
     logger.error("FAILED to load write tools: %s", e)
 
+# 4 GA4 read tools (Google Analytics Data API)
+try:
+    from tools import ga4_reports  # noqa: F401
+    logger.info("Loaded: 4 GA4 read tools")
+except Exception as e:
+    logger.error("FAILED to load GA4 tools: %s", e)
+
 # Diagnostic: list all registered tools
 tool_names = [t.name for t in mcp._tool_manager.list_tools()]
 logger.info("Registered %d tools: %s", len(tool_names), tool_names)

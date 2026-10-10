@@ -17,7 +17,7 @@ SERVER_FILE = os.path.join(os.path.dirname(__file__), "run_server.py")
 # Utility modules that don't contain @mcp.tool() — skip in registration check
 UTILITY_MODULES = {
     "__init__", "helpers", "options", "error_handler",
-    "mutation", "validation", "audit", "name_resolver",
+    "mutation", "validation", "audit", "name_resolver", "ga4_helpers",
 }
 
 

@@ -6,7 +6,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 
 RUN pip install --no-cache-dir \
     "google-ads-mcp @ git+https://github.com/googleads/google-ads-mcp.git@85dab37" \
-    supabase
+    supabase \
+    google-analytics-data \
+    google-analytics-admin
 
 COPY entrypoint.sh /app/entrypoint.sh
 COPY run_server.py /app/run_server.py
