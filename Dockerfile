@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /
 
 RUN pip install --no-cache-dir \
     "google-ads-mcp @ git+https://github.com/googleads/google-ads-mcp.git@85dab37" \
+    "mcp<2" \
+    "google-ads==31.4.0" \
     supabase \
     google-analytics-data \
     google-analytics-admin
